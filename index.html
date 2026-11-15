@@ -11,7 +11,7 @@
   body { display: flex; flex-direction: column; height: 100dvh; }
   #viewfinder { flex: 1; position: relative; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
   video { position: absolute; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
-  canvas { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; image-rendering: crisp-edges; }
+  canvas { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; image-rendering: crisp-edges; transition: transform 0.2s; }
   #status { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.8); color: #0f0; font-size: 10px; padding: 4px 8px; border: 1px solid #1a1a1a; border-radius: 3px; pointer-events: none; line-height: 1.5; font-weight: bold; letter-spacing: 0.5px; z-index: 10; }
   #status .rec { color: #f33; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: 0.3; } }
@@ -106,15 +106,16 @@ function rebuildBuffers() {
   prevRaw = new Float32Array(size * 3); moshBuffer = new Float32Array(size * 3);
   fpnMap = new Float32Array(size); hotPixels = new Uint8Array(size);
   cachedDynamicNoise = new Float32Array(size * 3); vignetteMask = new Float32Array(size);
-  const colNoise = new Float32Array(W);
-  for (let x = 0; x < W; x++) colNoise[x] = (Math.random() - 0.5) * 10;
+  
+  // === ФИКС: Убран colNoise, шум теперь случайный по всей матрице ===
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
-      fpnMap[idx] = colNoise[x] + (Math.random() - 0.5) * 6;
+      fpnMap[idx] = (Math.random() - 0.5) * 4; // Было colNoise[x] + ...
       if (Math.random() < 0.0015) hotPixels[idx] = 1;
     }
   }
+  
   const cx = W / 2, cy = H / 2, maxR = Math.sqrt(cx * cx + cy * cy);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
