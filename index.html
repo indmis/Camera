@@ -6,7 +6,7 @@
 <title>0.3MP Dither Cam</title>
 <link rel="manifest" href="./manifest.json">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
   body {
     background: #0d0d0d;
     color: #fff;
@@ -52,6 +52,8 @@
     pointer-events: none;
     line-height: 1.4;
   }
+  #status .rec { color: #f33; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
   #controls {
     padding: 10px 12px 16px;
     background: #161616;
@@ -100,10 +102,21 @@
     color: #000;
     font-size: 14px;
     padding: 12px;
+    flex: 2;
   }
-  #snap:active {
-    background: #888;
+  #snap:active { background: #888; }
+  #rec {
+    background: #1a1a1a;
+    border-color: #f33;
+    color: #f33;
+    flex: 1;
   }
+  #rec.rec-active {
+    background: #f33;
+    color: #fff;
+    animation: pulse 0.8s infinite;
+  }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255,51,51,0.4); } }
 </style>
 </head>
 <body>
@@ -127,6 +140,7 @@
   </div>
   <div class="btn-row">
     <button id="snap">СНЯТЬ КАДР</button>
+    <button id="rec">REC</button>
   </div>
 </div>
 
@@ -139,6 +153,7 @@ const modeBtn = document.getElementById('modeBtn');
 const resBtn = document.getElementById('resBtn');
 const invBtn = document.getElementById('invBtn');
 const snapBtn = document.getElementById('snap');
+const recBtn = document.getElementById('rec');
 const statusEl = document.getElementById('status');
 
 const contrastSlider = document.getElementById('contrast');
@@ -185,17 +200,13 @@ function initSensorBuffers() {
   fpnMap = new Float32Array(size);
   cachedDynamicNoise = new Float32Array(size);
 
-  const colNoise = new Float32Array(W);
-  for (let x = 0; x < W; x++) {
-    colNoise[x] = (Math.random() - 0.5) * 14;
-  }
-
+  // Убраны вертикальные полосы (colNoise). Шум полностью случайный.
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
-      let n = colNoise[x] + (Math.random() - 0.5) * 8;
+      let n = (Math.random() - 0.5) * 6;
       const rnd = Math.random();
-      if (rnd > 0.9985) n += 110;
+      if (rnd > 0.9985) n += 110; // Горячие пиксели
       else if (rnd < 0.0015) n -= 110;
       fpnMap[idx] = n;
     }
@@ -310,10 +321,11 @@ function processFrame() {
     if (frameCount % 10 === 0) {
       const motPct = Math.round(activeMotion * 100);
       const freezeTag = sensorUpdated ? '' : ' [FREEZE]';
-      statusEl.textContent = `${W}x${H} | ДВИЖ:${motPct}%${freezeTag}`;
+      const recTag = recording ? ' <span class="rec">● REC</span>' : '';
+      statusEl.innerHTML = `${W}x${H} | ДВИЖ:${motPct}%${freezeTag}${recTag}`;
     }
 
-    // Шлейф (trail) жестко задан 0.35, ползунок убран
+    // Шлейф (trail) жестко задан 0.35
     const effectiveTrail = 0.35;
     const keepNew = 1 - effectiveTrail;
 
@@ -395,6 +407,59 @@ snapBtn.addEventListener('click', () => {
   link.href = dataUrl;
   link.click();
 });
+
+// === ЗАПИСЬ ВИДЕО ===
+let recorder = null;
+let recording = false;
+let recChunks = [];
+
+recBtn.addEventListener('click', () => {
+  if (!recording) {
+    startRecording();
+  } else {
+    stopRecording();
+  }
+});
+
+function startRecording() {
+  try {
+    const stream = canvas.captureStream(30);
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : MediaRecorder.isTypeSupported('video/webm')
+        ? 'video/webm'
+        : 'video/mp4';
+
+    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2000000 });
+    recChunks = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(recChunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      link.download = `0.3MP_REC_${Date.now()}.${ext}`;
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    };
+    recorder.start(200);
+    recording = true;
+    recBtn.textContent = 'STOP';
+    recBtn.classList.add('rec-active');
+  } catch (err) {
+    statusEl.textContent = 'REC: ' + err.message;
+  }
+}
+
+function stopRecording() {
+  if (recorder && recorder.state !== 'inactive') {
+    recorder.stop();
+  }
+  recording = false;
+  recBtn.textContent = 'REC';
+  recBtn.classList.remove('rec-active');
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
