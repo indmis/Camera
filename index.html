@@ -4,12 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>0.3MP Dither Cam</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="./manifest.json">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
   body {
-    background: #111;
+    background: #0d0d0d;
     color: #fff;
     font-family: monospace;
     display: flex;
@@ -45,36 +44,63 @@
     position: absolute;
     top: 8px;
     left: 8px;
-    background: rgba(0,0,0,0.7);
+    background: rgba(0, 0, 0, 0.75);
     color: #0f0;
     font-size: 11px;
     padding: 3px 6px;
+    border: 1px solid #222;
     pointer-events: none;
   }
   #controls {
-    padding: 15px;
-    background: #1a1a1a;
+    padding: 10px 12px 16px;
+    background: #161616;
     border-top: 2px solid #333;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .slider-row {
+    display: flex;
     align-items: center;
     gap: 10px;
+    font-size: 12px;
+    color: #aaa;
+  }
+  input[type="range"] {
+    flex: 1;
+    accent-color: #fff;
+    height: 6px;
+    background: #333;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
   }
   button {
     background: #000;
     color: #fff;
     border: 2px solid #fff;
-    padding: 14px 16px;
+    padding: 12px 8px;
     font-family: monospace;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
     text-transform: uppercase;
     cursor: pointer;
     flex: 1;
   }
-  button:active { background: #fff; color: #000; }
-  #snap { background: #fff; color: #000; }
-  #snap:active { background: #888; }
+  button:active, button.active {
+    background: #fff;
+    color: #000;
+  }
+  #snap {
+    background: #fff;
+    color: #000;
+    font-size: 14px;
+    flex: 1.4;
+  }
+  #snap:active {
+    background: #888;
+  }
 </style>
 </head>
 <body>
@@ -82,36 +108,66 @@
 <div id="viewfinder">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
-  <div id="status">ЗАПУСК КАМЕРЫ...</div>
+  <div id="status">ЗАПУСК...</div>
 </div>
 
 <div id="controls">
-  <button id="modeBtn">ДИЗЕР 1-BIT</button>
-  <button id="snap">СНЯТЬ</button>
+  <div class="slider-row">
+    <span>КОНТР</span>
+    <input type="range" id="contrast" min="50" max="250" value="125">
+    <span id="contrastVal">1.25</span>
+  </div>
+  <div class="btn-row">
+    <button id="modeBtn">ДИЗЕР 1-BIT</button>
+    <button id="resBtn">240x320</button>
+    <button id="invBtn">ИНВ</button>
+  </div>
+  <div class="btn-row">
+    <button id="snap">СНЯТЬ КАДР</button>
+  </div>
 </div>
 
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
 const modeBtn = document.getElementById('modeBtn');
+const resBtn = document.getElementById('resBtn');
+const invBtn = document.getElementById('invBtn');
 const snapBtn = document.getElementById('snap');
 const statusEl = document.getElementById('status');
+const contrastSlider = document.getElementById('contrast');
+const contrastVal = document.getElementById('contrastVal');
 
-const W = 240;
-const H = 320;
+const resolutions = [
+  { w: 120, h: 160, label: '120x160' },
+  { w: 240, h: 320, label: '240x320' },
+  { w: 480, h: 640, label: '480x640' }
+];
+let resIdx = 1;
+let W = resolutions[resIdx].w;
+let H = resolutions[resIdx].h;
 canvas.width = W;
 canvas.height = H;
 
+const modes = [
+  'ДИЗЕР 1-BIT',
+  'КСЕРОКС 2-BIT',
+  'ГРЯЗЬ + ШУМ',
+  'БРЕЛОК RGB',
+  'ПОРОГ 1-BIT'
+];
 let mode = 0;
-const modes = ['ДИЗЕР 1-BIT', 'КСЕРОКС 2-BIT', 'ГРЯЗНОЕ Ч/Б'];
+let invert = false;
+let contrast = 1.25;
 
-// Одномерный массив матрицы Байера 4x4 (одинарные скобки не съедаются при копировании)
+// Одномерный массив матрицы Байера 4x4
 const bayer = new Uint8Array([
-   15, 135,  45, 165,
-  195,  75, 225, 105,
-   60, 180,  30, 150,
-  240, 120, 210,  90
+  15, 135, 45, 165,
+  195, 75, 225, 105,
+  60, 180, 30, 150,
+  240, 120, 210, 90
 ]);
 
 let frameCount = 0;
@@ -127,16 +183,35 @@ navigator.mediaDevices.getUserMedia({
   statusEl.textContent = 'ОШИБКА: ' + err.message;
 });
 
+contrastSlider.addEventListener('input', () => {
+  contrast = contrastSlider.value / 100;
+  contrastVal.textContent = contrast.toFixed(2);
+});
+
 modeBtn.addEventListener('click', () => {
   mode = (mode + 1) % modes.length;
   modeBtn.textContent = modes[mode];
+});
+
+resBtn.addEventListener('click', () => {
+  resIdx = (resIdx + 1) % resolutions.length;
+  W = resolutions[resIdx].w;
+  H = resolutions[resIdx].h;
+  canvas.width = W;
+  canvas.height = H;
+  resBtn.textContent = resolutions[resIdx].label;
+});
+
+invBtn.addEventListener('click', () => {
+  invert = !invert;
+  invBtn.classList.toggle('active', invert);
 });
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
     frameCount++;
     if (frameCount % 15 === 0) {
-      statusEl.textContent = `LIVE | ${W}x${H} | КАДР #${frameCount}`;
+      statusEl.textContent = `LIVE | ${W}x${H} | #${frameCount}`;
     }
 
     const vRatio = video.videoWidth / video.videoHeight;
@@ -158,26 +233,65 @@ function processFrame() {
     const imgData = ctx.getImageData(0, 0, W, H);
     const data = imgData.data;
 
+    // Копия для сдвига каналов в цветном режиме "Брелок"
+    const copy = mode === 3 ? new Uint8ClampedArray(data) : null;
+
     for (let y = 0; y < H; y++) {
       const rowOffset = (y & 3) << 2;
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
-        let lum = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-        lum = (lum - 128) * 1.25 + 128;
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
 
-        let val = 0;
-        if (mode === 0) {
-          const threshold = bayer[rowOffset + (x & 3)];
-          val = lum > threshold ? 255 : 0;
-        } else if (mode === 1) {
-          val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
+        if (mode === 3) {
+          // РЕЖИМ "БРЕЛОК RGB": хроматическая аберрация + 3-битный цвет (8 цветов) + шум
+          const shift = 2;
+          const rIdx = (y * W + Math.min(W - 1, x + shift)) * 4;
+          const bIdx = (y * W + Math.max(0, x - shift)) * 4;
+          const noise = (Math.random() - 0.5) * 40;
+
+          r = ((copy[rIdx] - 128) * contrast + 128) + noise;
+          g = ((g - 128) * contrast + 128) + noise;
+          b = ((copy[bIdx + 2] - 128) * contrast + 128) + noise;
+
+          // Жесткое квантование каждого канала до 0 или 255 (или 3 уровней)
+          r = r > 128 ? 255 : (r > 64 ? 128 : 0);
+          g = g > 128 ? 255 : (g > 64 ? 128 : 0);
+          b = b > 128 ? 255 : (b > 64 ? 128 : 0);
         } else {
-          // 8 уровней серого + легкий цифровой шум
-          const noise = (Math.random() - 0.5) * 35;
-          val = Math.floor(Math.max(0, Math.min(255, lum + noise)) / 36) * 36;
+          // Ч/Б режимы
+          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          lum = (lum - 128) * contrast + 128;
+
+          let val = 0;
+          if (mode === 0) {
+            // Дизер Байера 1-bit
+            const threshold = bayer[rowOffset + (x & 3)];
+            val = lum > threshold ? 255 : 0;
+          } else if (mode === 1) {
+            // Ксерокс 2-bit (4 оттенка)
+            val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
+          } else if (mode === 2) {
+            // Грязь + Шум (8 оттенков)
+            const noise = (Math.random() - 0.5) * 45;
+            val = Math.floor(Math.max(0, Math.min(255, lum + noise)) / 36) * 36;
+          } else if (mode === 4) {
+            // Жесткий порог 1-bit без дизеринга
+            val = lum > 128 ? 255 : 0;
+          }
+          r = g = b = val;
         }
 
-        data[i] = data[i+1] = data[i+2] = val;
+        if (invert) {
+          r = 255 - r;
+          g = 255 - g;
+          b = 255 - b;
+        }
+
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
       }
     }
     ctx.putImageData(imgData, 0, 0);
@@ -187,49 +301,25 @@ function processFrame() {
 
 snapBtn.addEventListener('click', () => {
   const saveCanvas = document.createElement('canvas');
-  saveCanvas.width = W * 2;
-  saveCanvas.height = H * 2;
+  // Масштабируем так, чтобы итоговый файл был примерно 480x640, но с крупным зерном
+  const scale = Math.max(1, Math.floor(480 / W));
+  saveCanvas.width = W * scale;
+  saveCanvas.height = H * scale;
   const sCtx = saveCanvas.getContext('2d');
   sCtx.imageSmoothingEnabled = false;
   sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
 
-  const dataUrl = saveCanvas.toDataURL('image/jpeg', 0.15);
+  // Агрессивное JPEG-сжатие 12% для характерных артефактов
+  const dataUrl = saveCanvas.toDataURL('image/jpeg', 0.12);
   const link = document.createElement('a');
-  link.download = `03MP_${Date.now()}.jpg`;
+  link.download = `03MP_${modes[mode].replace(/\s+/g, '')}_${Date.now()}.jpg`;
   link.href = dataUrl;
   link.click();
 });
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
-       }
- // Автогенерация PNG-иконки 512x512 для корректной установки PWA в Chrome
-(async function attachPngIcon() {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 512;
-  const g = c.getContext('2d');
-  g.fillStyle = '#111111';
-  g.fillRect(0, 0, 512, 512);
-  g.fillStyle = '#ffffff';
-  g.fillRect(64, 128, 384, 288);
-  g.fillRect(160, 64, 192, 64);
-  g.fillStyle = '#111111';
-  g.fillRect(192, 192, 128, 160);
-  g.fillStyle = '#ffffff';
-  g.fillRect(224, 224, 64, 96);
-
-  c.toBlob(async (blob) => {
-    const iconUrl = URL.createObjectURL(blob);
-    const res = await fetch('./manifest.json');
-    const manifest = await res.json();
-    manifest.icons = [
-      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' }
-    ];
-    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    const link = document.querySelector('link[rel="manifest"]');
-    if (link) link.href = URL.createObjectURL(manifestBlob);
-  }, 'image/png');
-})();
+}
 </script>
 </body>
 </html>
