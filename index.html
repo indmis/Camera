@@ -4,133 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d0d">
-<title>0.3MP Dither Cam v2</title>
+<title>0.3MP Dither Cam — Datamosh</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    width: 100%; height: 100%;
-    background: #0d0d0d;
-    color: #fff;
-    font-family: 'Courier New', monospace;
-    overflow: hidden;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-  body {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-  }
-  #viewfinder {
-    flex: 1;
-    position: relative;
-    background: #000;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  video {
-    position: absolute;
-    width: 2px; height: 2px;
-    opacity: 0.01;
-    pointer-events: none;
-  }
-  /* === Канвас на весь экран, с cover === */
-  canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-  }
-  #status {
-    position: absolute;
-    top: 8px; left: 8px;
-    background: rgba(0,0,0,0.8);
-    color: #0f0;
-    font-size: 10px;
-    padding: 4px 8px;
-    border: 1px solid #1a1a1a;
-    border-radius: 3px;
-    pointer-events: none;
-    line-height: 1.5;
-    font-weight: bold;
-    letter-spacing: 0.5px;
-    z-index: 10;
-  }
+  html, body { width: 100%; height: 100%; background: #0d0d0d; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  body { display: flex; flex-direction: column; height: 100dvh; }
+  #viewfinder { flex: 1; position: relative; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  video { position: absolute; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
+  canvas { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #status { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.8); color: #0f0; font-size: 10px; padding: 4px 8px; border: 1px solid #1a1a1a; border-radius: 3px; pointer-events: none; line-height: 1.5; font-weight: bold; letter-spacing: 0.5px; z-index: 10; }
   #status .rec { color: #f33; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: 0.3; } }
-  #controls {
-    padding: 10px 12px 14px;
-    background: #161616;
-    border-top: 2px solid #333;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .slider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 10px;
-    color: #aaa;
-    font-weight: bold;
-  }
+  #controls { padding: 10px 12px 14px; background: #161616; border-top: 2px solid #333; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+  .slider-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #aaa; font-weight: bold; }
   .slider-row span:first-child { width: 56px; }
   .slider-row span:last-child { width: 38px; text-align: right; color: #fff; }
-  input[type="range"] {
-    flex: 1;
-    accent-color: #0f0;
-    height: 6px;
-    background: #333;
-    border-radius: 3px;
-  }
-  .btn-row {
-    display: flex;
-    gap: 5px;
-  }
-  button {
-    background: #000;
-    color: #fff;
-    border: 2px solid #fff;
-    padding: 9px 4px;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
-    cursor: pointer;
-    flex: 1;
-    border-radius: 3px;
-    transition: all 0.1s;
-    letter-spacing: 0.3px;
-  }
+  input[type="range"] { flex: 1; accent-color: #0f0; height: 6px; background: #333; border-radius: 3px; }
+  .btn-row { display: flex; gap: 5px; }
+  button { background: #000; color: #fff; border: 2px solid #fff; padding: 9px 4px; font-family: inherit; font-size: 10px; font-weight: bold; text-transform: uppercase; cursor: pointer; flex: 1; border-radius: 3px; transition: all 0.1s; letter-spacing: 0.3px; }
   button:active { transform: scale(0.96); }
-  button.active {
-    background: #0f0;
-    color: #000;
-    border-color: #0f0;
-  }
-  button.rec-active {
-    background: #f33;
-    color: #fff;
-    border-color: #f33;
-    animation: pulse 0.8s infinite;
-  }
+  button.active { background: #0f0; color: #000; border-color: #0f0; }
+  button.rec-active { background: #f33; color: #fff; border-color: #f33; animation: pulse 0.8s infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255,51,51,0.4); } }
-  #snap {
-    background: #fff;
-    color: #000;
-    font-size: 13px;
-    padding: 11px;
-    flex: 2;
-  }
-  #rec {
-    background: #1a1a1a;
-    border-color: #f33;
-    color: #f33;
-  }
+  #snap { background: #fff; color: #000; font-size: 13px; padding: 11px; flex: 2; }
+  #rec { background: #1a1a1a; border-color: #f33; color: #f33; }
   #rec.rec-active { background: #f33; color: #fff; }
 </style>
 </head>
@@ -149,9 +46,9 @@
     <span id="contrastVal">1.25</span>
   </div>
   <div class="slider-row">
-    <span>ШЛЕЙФ</span>
-    <input type="range" id="blur" min="0" max="90" value="35">
-    <span id="blurVal">35%</span>
+    <span>ДАТАМОШ</span>
+    <input type="range" id="blur" min="0" max="100" value="65">
+    <span id="blurVal">65%</span>
   </div>
   <div class="btn-row">
     <button id="modeBtn">ДИЗЕР 1-BIT</button>
@@ -168,14 +65,11 @@
     <button id="rec">REC</button>
   </div>
 </div>
-
 <script>
 'use strict';
-
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: false });
-
 const modeBtn = document.getElementById('modeBtn');
 const resBtn = document.getElementById('resBtn');
 const gyroBtn = document.getElementById('gyroBtn');
@@ -185,72 +79,35 @@ const rotBtn = document.getElementById('rotBtn');
 const snapBtn = document.getElementById('snap');
 const recBtn = document.getElementById('rec');
 const statusEl = document.getElementById('status');
-
 const contrastSlider = document.getElementById('contrast');
 const contrastVal = document.getElementById('contrastVal');
 const blurSlider = document.getElementById('blur');
 const blurVal = document.getElementById('blurVal');
-
-// === Вертикальные разрешения (портрет) ===
-const RESOLUTIONS = [
-  { w: 120, h: 160, label: '120x160' },
-  { w: 240, h: 320, label: '240x320' },
-  { w: 360, h: 480, label: '360x480' }
-];
-const MODES = [
-  'ДИЗЕР 1-BIT',
-  'КСЕРОКС 2-BIT',
-  'ГРЯЗЬ + ШУМ',
-  'БРЕЛОК RGB',
-  'ПОРОГ 1-BIT'
-];
+const RESOLUTIONS = [{ w: 120, h: 160, label: '120x160' }, { w: 240, h: 320, label: '240x320' }, { w: 360, h: 480, label: '360x480' }];
+const MODES = ['ДИЗЕР 1-BIT', 'КСЕРОКС 2-BIT', 'ГРЯЗЬ + ШУМ', 'БРЕЛОК RGB', 'ПОРОГ 1-BIT'];
 const MODES_COUNT = MODES.length;
-
-let resIdx = 1;
-let W = RESOLUTIONS[resIdx].w;
-let H = RESOLUTIONS[resIdx].h;
-let mode = 0;
-let invert = false;
-let contrast = 1.25;
-let blurTrail = 0.35;
-let gyroActive = true;
-let facingMode = 'environment';
-let rotation = 0;
-
-// === Байер 4x4 с плавными порогами (без явной сетки) ===
+let resIdx = 1, W = RESOLUTIONS[resIdx].w, H = RESOLUTIONS[resIdx].h;
+let mode = 0, invert = false, contrast = 1.25, moshAmount = 0.65;
+let gyroActive = true, facingMode = 'environment', rotation = 0;
 const BAYER4 = new Uint8Array(16);
-(function buildBayer4() {
-  const m = [ 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 ];
-  for (let i = 0; i < 16; i++) {
-    BAYER4[i] = Math.floor((m[i] + 0.5) * 255 / 16);
-  }
-})();
-
+(function() { const m = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]; for (let i = 0; i < 16; i++) BAYER4[i] = Math.floor((m[i] + 0.5) * 255 / 16); })();
 let prevRaw = new Float32Array(W * H * 3);
+let moshBuffer = new Float32Array(W * H * 3);
 let fpnMap = new Float32Array(W * H);
 let hotPixels = new Uint8Array(W * H);
 let cachedDynamicNoise = new Float32Array(W * H * 3);
-let motionIntensity = 0;
-let lastAcc = { x: 0, y: 0, z: 0 };
-let lastSensorHash = 0;
-let frameCount = 0;
-let fps = 0;
-let fpsFrames = 0;
-let fpsLastTime = performance.now();
-
+let motionIntensity = 0, lastAcc = { x: 0, y: 0, z: 0 };
+let lastSensorHash = 0, frameCount = 0, fps = 0, fpsFrames = 0, fpsLastTime = performance.now();
 let vignetteMask = null;
-
+const BLOCK = 8, SEARCH_RADIUS = 8, SMALL_SCALE = 2;
+let frameSinceReset = 0, smallLum = null, prevSmallLum = null, smallW = 0, smallH = 0;
 function rebuildBuffers() {
   const size = W * H;
-  prevRaw = new Float32Array(size * 3);
-  fpnMap = new Float32Array(size);
-  hotPixels = new Uint8Array(size);
-  cachedDynamicNoise = new Float32Array(size * 3);
-  vignetteMask = new Float32Array(size);
-
+  prevRaw = new Float32Array(size * 3); moshBuffer = new Float32Array(size * 3);
+  fpnMap = new Float32Array(size); hotPixels = new Uint8Array(size);
+  cachedDynamicNoise = new Float32Array(size * 3); vignetteMask = new Float32Array(size);
   const colNoise = new Float32Array(W);
   for (let x = 0; x < W; x++) colNoise[x] = (Math.random() - 0.5) * 10;
-
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
@@ -258,367 +115,202 @@ function rebuildBuffers() {
       if (Math.random() < 0.0015) hotPixels[idx] = 1;
     }
   }
-
-  const cx = W / 2, cy = H / 2;
-  const maxR = Math.sqrt(cx * cx + cy * cy);
+  const cx = W / 2, cy = H / 2, maxR = Math.sqrt(cx * cx + cy * cy);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const dx = x - cx, dy = y - cy;
-      const r = Math.sqrt(dx * dx + dy * dy) / maxR;
+      const dx = x - cx, dy = y - cy, r = Math.sqrt(dx * dx + dy * dy) / maxR;
       vignetteMask[y * W + x] = 1 - Math.pow(r, 2.2) * 0.55;
     }
   }
-
-  canvas.width = W;
-  canvas.height = H;
+  smallW = Math.ceil(W / SMALL_SCALE); smallH = Math.ceil(H / SMALL_SCALE);
+  smallLum = new Float32Array(smallW * smallH); prevSmallLum = new Float32Array(smallW * smallH);
+  canvas.width = W; canvas.height = H;
 }
-
 rebuildBuffers();
-
 function handleMotion(e) {
   const acc = e.accelerationIncludingGravity || e.acceleration;
   if (!acc || acc.x === null) return;
-  const dx = acc.x - lastAcc.x;
-  const dy = acc.y - lastAcc.y;
-  const dz = acc.z - lastAcc.z;
+  const dx = acc.x - lastAcc.x, dy = acc.y - lastAcc.y, dz = acc.z - lastAcc.z;
   lastAcc = { x: acc.x, y: acc.y, z: acc.z };
   const delta = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const instant = Math.min(1, delta / 4.0);
-  motionIntensity = Math.max(instant, motionIntensity * 0.88);
+  motionIntensity = Math.max(Math.min(1, delta / 4.0), motionIntensity * 0.88);
 }
-
 window.addEventListener('devicemotion', handleMotion);
-
 let currentStream = null;
-
 async function startCamera() {
-  if (currentStream) {
-    currentStream.getTracks().forEach(t => t.stop());
-  }
+  if (currentStream) currentStream.getTracks().forEach(t => t.stop());
   try {
-    const constraints = {
-      video: {
-        facingMode: facingMode,
-        width: { ideal: 720 },
-        height: { ideal: 1280 },
-        frameRate: { ideal: 30 }
-      },
-      audio: false
-    };
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = currentStream;
-    await video.play();
-    startFrameLoop();
-  } catch (err) {
-    statusEl.textContent = 'КАМЕРА: ' + err.message;
-  }
+    currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode, width: { ideal: 720 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } }, audio: false });
+    video.srcObject = currentStream; await video.play(); startFrameLoop();
+  } catch (err) { statusEl.textContent = 'КАМЕРА: ' + err.message; }
 }
-
 let frameLoopActive = false;
-
 function startFrameLoop() {
-  if (frameLoopActive) return;
-  frameLoopActive = true;
+  if (frameLoopActive) return; frameLoopActive = true;
   if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-    const cb = () => {
-      processFrame();
-      video.requestVideoFrameCallback(cb);
-    };
+    const cb = () => { processFrame(); video.requestVideoFrameCallback(cb); };
     video.requestVideoFrameCallback(cb);
   } else {
-    const loop = () => {
-      processFrame();
-      requestAnimationFrame(loop);
-    };
+    const loop = () => { processFrame(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 }
-
-function processFrame() {
-  if (video.readyState < 2 || video.videoWidth === 0) return;
-
-  frameCount++;
-  fpsFrames++;
-  const now = performance.now();
-  if (now - fpsLastTime >= 1000) {
-    fps = fpsFrames;
-    fpsFrames = 0;
-    fpsLastTime = now;
-  }
-
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const vRatio = vw / vh;
-  const cRatio = W / H;
-  let sx, sy, sw, sh;
-  if (vRatio > cRatio) {
-    sh = vh;
-    sw = sh * cRatio;
-    sx = (vw - sw) / 2;
-    sy = 0;
-  } else {
-    sw = vw;
-    sh = sw / cRatio;
-    sx = 0;
-    sy = (vh - sh) / 2;
-  }
-
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
-  const imgData = ctx.getImageData(0, 0, W, H);
-  const data = imgData.data;
-
-  let hash = 0;
-  for (let k = 0; k < data.length; k += 128) hash = (hash + data[k]) | 0;
-  const sensorUpdated = (hash !== lastSensorHash);
-  lastSensorHash = hash;
-
-  motionIntensity *= 0.94;
-  const activeMotion = gyroActive ? motionIntensity : 0.4;
-
-  if (sensorUpdated) {
-    const amp = 4 + activeMotion * 55;
-    for (let j = 0; j < cachedDynamicNoise.length; j++) {
-      cachedDynamicNoise[j] = (Math.random() - 0.5) * amp;
+function buildSmallLum(data) {
+  for (let sy = 0; sy < smallH; sy++) {
+    for (let sx = 0; sx < smallW; sx++) {
+      let sum = 0, cnt = 0; const baseX = sx * SMALL_SCALE, baseY = sy * SMALL_SCALE;
+      for (let dy = 0; dy < SMALL_SCALE; dy++) {
+        const yy = baseY + dy; if (yy >= H) break;
+        for (let dx = 0; dx < SMALL_SCALE; dx++) {
+          const xx = baseX + dx; if (xx >= W) break;
+          const i = (yy * W + xx) * 4;
+          sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]; cnt++;
+        }
+      }
+      smallLum[sy * smallW + sx] = cnt > 0 ? sum / cnt : 0;
     }
   }
-
-  const effectiveTrail = Math.min(0.92, blurTrail * (1 - activeMotion * 0.35));
-  const keepNew = 1 - effectiveTrail;
-
-  for (let p = 0; p < W * H; p++) {
-    const i = p * 4;
-    const p3 = p * 3;
-    prevRaw[p3]     = prevRaw[p3]     * effectiveTrail + data[i]     * keepNew;
-    prevRaw[p3 + 1] = prevRaw[p3 + 1] * effectiveTrail + data[i + 1] * keepNew;
-    prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
+}
+function findBlockVector(bx, by) {
+  const sx0 = Math.floor(bx / SMALL_SCALE), sy0 = Math.floor(by / SMALL_SCALE);
+  const bwS = Math.max(1, Math.floor(BLOCK / SMALL_SCALE)), bhS = Math.max(1, Math.floor(BLOCK / SMALL_SCALE));
+  let bestSAD = Infinity, bestDx = 0, bestDy = 0, sr = Math.floor(SEARCH_RADIUS / SMALL_SCALE);
+  for (let dy = -sr; dy <= sr; dy += 1) {
+    for (let dx = -sr; dx <= sr; dx += 1) {
+      const px = sx0 + dx, py = sy0 + dy;
+      if (px < 0 || py < 0 || px + bwS > smallW || py + bhS > smallH) continue;
+      let sad = 0;
+      for (let yy = 0; yy < bhS; yy++) for (let xx = 0; xx < bwS; xx++) sad += Math.abs(smallLum[(sy0 + yy) * smallW + (sx0 + xx)] - prevSmallLum[(py + yy) * smallW + (px + xx)]);
+      if (sad < bestSAD) { bestSAD = sad; bestDx = dx; bestDy = dy; }
+    }
   }
-
-  const shift = mode === 3 ? 1 + Math.round(activeMotion * 4) : 0;
-  const inv = invert;
-
-  // === Рандомизация порога для устранения видимой сетки ===
-  // Вносим лёгкий случайный шум в порог Байера, чтобы паттерн не бросался в глаза
-  const randomThresholdJitter = 6;
-
+  const dxPx = bestDx * SMALL_SCALE, dyPx = bestDy * SMALL_SCALE;
+  const len = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+  if (len > SEARCH_RADIUS * 0.9) return { reset: true, dx: 0, dy: 0 };
+  return { reset: false, dx: dxPx, dy: dyPx };
+}
+function applyDatamosh(data) {
+  const src = moshBuffer, dst = prevRaw;
+  for (let by = 0; by < H; by += BLOCK) {
+    for (let bx = 0; bx < W; bx += BLOCK) {
+      const vec = findBlockVector(bx, by);
+      for (let yy = 0; yy < BLOCK; yy++) {
+        const gy = by + yy; if (gy >= H) break;
+        for (let xx = 0; xx < BLOCK; xx++) {
+          const gx = bx + xx; if (gx >= W) break;
+          const p = gy * W + gx, p3 = p * 3;
+          if (vec.reset) {
+            const i = p * 4; dst[p3] = data[i]; dst[p3+1] = data[i+1]; dst[p3+2] = data[i+2];
+          } else {
+            let sxg = gx + vec.dx, syg = gy + vec.dy;
+            if (sxg < 0) sxg = 0; if (syg < 0) syg = 0; if (sxg >= W) sxg = W - 1; if (syg >= H) syg = H - 1;
+            const sp = (syg * W + sxg) * 3; dst[p3] = src[sp]; dst[p3+1] = src[sp+1]; dst[p3+2] = src[sp+2];
+          }
+        }
+      }
+    }
+  }
+  moshBuffer.set(dst);
+}
+function processFrame() {
+  if (video.readyState < 2 || video.videoWidth === 0) return;
+  frameCount++; fpsFrames++;
+  const now = performance.now();
+  if (now - fpsLastTime >= 1000) { fps = fpsFrames; fpsFrames = 0; fpsLastTime = now; }
+  const vw = video.videoWidth, vh = video.videoHeight, vRatio = vw / vh, cRatio = W / H;
+  let sx, sy, sw, sh;
+  if (vRatio > cRatio) { sh = vh; sw = sh * cRatio; sx = (vw - sw) / 2; sy = 0; }
+  else { sw = vw; sh = sw / cRatio; sx = 0; sy = (vh - sh) / 2; }
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
+  const imgData = ctx.getImageData(0, 0, W, H), data = imgData.data;
+  let hash = 0; for (let k = 0; k < data.length; k += 128) hash = (hash + data[k]) | 0;
+  const sensorUpdated = (hash !== lastSensorHash); lastSensorHash = hash;
+  motionIntensity *= 0.94; const activeMotion = gyroActive ? motionIntensity : 0.4;
+  if (sensorUpdated) { const amp = 4 + activeMotion * 55; for (let j = 0; j < cachedDynamicNoise.length; j++) cachedDynamicNoise[j] = (Math.random() - 0.5) * amp; }
+  buildSmallLum(data); frameSinceReset++;
+  const resetEvery = Math.max(1, Math.round(moshAmount * 20));
+  if (frameCount === 1 || frameSinceReset >= resetEvery) {
+    for (let p = 0; p < W * H; p++) { const i = p * 4, p3 = p * 3; moshBuffer[p3] = data[i]; moshBuffer[p3+1] = data[i+1]; moshBuffer[p3+2] = data[i+2]; }
+    frameSinceReset = 0;
+  } else { applyDatamosh(data); }
+  prevSmallLum.set(smallLum);
+  const shift = mode === 3 ? 1 + Math.round(activeMotion * 4) : 0, inv = invert, jitter = 6;
   for (let y = 0; y < H; y++) {
     const bayerRow = (y & 3) * 4;
     for (let x = 0; x < W; x++) {
-      const p = y * W + x;
-      const i = p * 4;
-      const p3 = p * 3;
-
-      const vig = vignetteMask[p];
-
-      const nR = fpnMap[p] + cachedDynamicNoise[p3];
-      const nG = fpnMap[p] + cachedDynamicNoise[p3 + 1];
-      const nB = fpnMap[p] + cachedDynamicNoise[p3 + 2];
-
+      const p = y * W + x, i = p * 4, p3 = p * 3, vig = vignetteMask[p];
+      const nR = fpnMap[p] + cachedDynamicNoise[p3], nG = fpnMap[p] + cachedDynamicNoise[p3+1], nB = fpnMap[p] + cachedDynamicNoise[p3+2];
       let r, g, b;
-
       if (mode === 3) {
-        const rX = Math.min(W - 1, x + shift);
-        const bX = Math.max(0, x - shift);
-        const rP = (y * W + rX) * 3;
-        const bP = (y * W + bX) * 3;
-
-        r = ((prevRaw[rP]     - 128) * contrast + 128) * vig + nR;
-        g = ((prevRaw[p3 + 1] - 128) * contrast + 128) * vig + nG;
-        b = ((prevRaw[bP + 2] - 128) * contrast + 128) * vig + nB;
-
+        const rX = Math.min(W - 1, x + shift), bX = Math.max(0, x - shift);
+        const rP = (y * W + rX) * 3, bP = (y * W + bX) * 3;
+        r = ((moshBuffer[rP] - 128) * contrast + 128) * vig + nR;
+        g = ((moshBuffer[p3+1] - 128) * contrast + 128) * vig + nG;
+        b = ((moshBuffer[bP+2] - 128) * contrast + 128) * vig + nB;
         r = r > 160 ? 255 : (r > 96 ? 160 : (r > 32 ? 64 : 0));
         g = g > 160 ? 255 : (g > 96 ? 160 : (g > 32 ? 64 : 0));
         b = b > 160 ? 255 : (b > 96 ? 160 : (b > 32 ? 64 : 0));
       } else {
-        const r0 = prevRaw[p3]     * vig + nR;
-        const g0 = prevRaw[p3 + 1] * vig + nG;
-        const b0 = prevRaw[p3 + 2] * vig + nB;
-        let lum = 0.299 * r0 + 0.587 * g0 + 0.114 * b0;
-        lum = (lum - 128) * contrast + 128;
-
-        let val = 0;
-        if (mode === 0) {
-          // Байер 4x4 + небольшой джиттер, чтобы убрать сетку
-          const baseThr = BAYER4[bayerRow + (x & 3)];
-          const thr = baseThr + (Math.random() - 0.5) * randomThresholdJitter;
-          val = lum > thr ? 255 : 0;
-        } else if (mode === 1) {
-          val = lum < 64 ? 0 : lum < 128 ? 64 : lum < 192 ? 128 : 255;
-        } else if (mode === 2) {
-          val = Math.floor(Math.max(0, Math.min(255, lum)) / 32) * 32;
-        } else {
-          val = lum > 128 ? 255 : 0;
-        }
+        const r0 = moshBuffer[p3] * vig + nR, g0 = moshBuffer[p3+1] * vig + nG, b0 = moshBuffer[p3+2] * vig + nB;
+        let lum = (0.299 * r0 + 0.587 * g0 + 0.114 * b0 - 128) * contrast + 128, val = 0;
+        if (mode === 0) { const thr = BAYER4[bayerRow + (x & 3)] + (Math.random() - 0.5) * jitter; val = lum > thr ? 255 : 0; }
+        else if (mode === 1) val = lum < 64 ? 0 : lum < 128 ? 64 : lum < 192 ? 128 : 255;
+        else if (mode === 2) val = Math.floor(Math.max(0, Math.min(255, lum)) / 32) * 32;
+        else val = lum > 128 ? 255 : 0;
         r = g = b = val;
       }
-
-      if (hotPixels[p]) {
-        const flick = Math.random();
-        if (flick > 0.7) { r = 255; g = 255; b = 255; }
-        else if (flick < 0.1) { r = 0; g = 0; b = 0; }
-      }
-
-      if (inv) {
-        r = 255 - r;
-        g = 255 - g;
-        b = 255 - b;
-      }
-
-      data[i]     = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
+      if (hotPixels[p]) { const flick = Math.random(); if (flick > 0.7) { r = g = b = 255; } else if (flick < 0.1) { r = g = b = 0; } }
+      if (inv) { r = 255 - r; g = 255 - g; b = 255 - b; }
+      data[i] = r; data[i+1] = g; data[i+2] = b;
     }
   }
-
   ctx.putImageData(imgData, 0, 0);
-
   if (frameCount % 8 === 0) {
-    const motPct = Math.round(activeMotion * 100);
-    const freezeTag = sensorUpdated ? '' : ' [FREEZE]';
-    const recTag = recording ? ' <span class="rec">● REC</span>' : '';
-    statusEl.innerHTML = W + 'x' + H + ' | ' + fps + ' FPS | ДВ:' + motPct + '%' + freezeTag + recTag;
+    const motPct = Math.round(activeMotion * 100), freezeTag = sensorUpdated ? '' : ' [FREEZE]', recTag = recording ? ' <span class="rec">● REC</span>' : '';
+    statusEl.innerHTML = W + 'x' + H + ' | ' + fps + ' FPS | ДВ:' + motPct + '% | MOSH:' + Math.round(moshAmount*100) + '%' + freezeTag + recTag;
   }
 }
-
-contrastSlider.addEventListener('input', () => {
-  contrast = contrastSlider.value / 100;
-  contrastVal.textContent = contrast.toFixed(2);
-});
-
-blurSlider.addEventListener('input', () => {
-  blurTrail = blurSlider.value / 100;
-  blurVal.textContent = blurSlider.value + '%';
-});
-
-modeBtn.addEventListener('click', () => {
-  mode = (mode + 1) % MODES_COUNT;
-  modeBtn.textContent = MODES[mode];
-  if (navigator.vibrate) navigator.vibrate(20);
-});
-
-resBtn.addEventListener('click', () => {
-  resIdx = (resIdx + 1) % RESOLUTIONS.length;
-  W = RESOLUTIONS[resIdx].w;
-  H = RESOLUTIONS[resIdx].h;
-  rebuildBuffers();
-  resBtn.textContent = RESOLUTIONS[resIdx].label;
-  if (navigator.vibrate) navigator.vibrate(20);
-});
-
+contrastSlider.addEventListener('input', () => { contrast = contrastSlider.value / 100; contrastVal.textContent = contrast.toFixed(2); });
+blurSlider.addEventListener('input', () => { moshAmount = blurSlider.value / 100; blurVal.textContent = blurSlider.value + '%'; });
+modeBtn.addEventListener('click', () => { mode = (mode + 1) % MODES_COUNT; modeBtn.textContent = MODES[mode]; if (navigator.vibrate) navigator.vibrate(20); });
+resBtn.addEventListener('click', () => { resIdx = (resIdx + 1) % RESOLUTIONS.length; W = RESOLUTIONS[resIdx].w; H = RESOLUTIONS[resIdx].h; rebuildBuffers(); resBtn.textContent = RESOLUTIONS[resIdx].label; if (navigator.vibrate) navigator.vibrate(20); });
 gyroBtn.addEventListener('click', async () => {
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-    try {
-      const state = await DeviceMotionEvent.requestPermission();
-      if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
-    } catch (err) {}
+    try { const state = await DeviceMotionEvent.requestPermission(); if (state === 'granted') window.addEventListener('devicemotion', handleMotion); } catch (err) {}
   }
-  gyroActive = !gyroActive;
-  gyroBtn.textContent = gyroActive ? 'ГИРО: АВТО' : 'ГИРО: ВЫКЛ';
-  gyroBtn.classList.toggle('active', gyroActive);
-  if (navigator.vibrate) navigator.vibrate(20);
+  gyroActive = !gyroActive; gyroBtn.textContent = gyroActive ? 'ГИРО: АВТО' : 'ГИРО: ВЫКЛ'; gyroBtn.classList.toggle('active', gyroActive); if (navigator.vibrate) navigator.vibrate(20);
 });
-
-invBtn.addEventListener('click', () => {
-  invert = !invert;
-  invBtn.classList.toggle('active', invert);
-  if (navigator.vibrate) navigator.vibrate(20);
-});
-
-camBtn.addEventListener('click', () => {
-  facingMode = facingMode === 'environment' ? 'user' : 'environment';
-  camBtn.textContent = facingMode === 'environment' ? 'ЗАДНЯЯ' : 'ПЕРЕДНЯЯ';
-  startCamera();
-  if (navigator.vibrate) navigator.vibrate(20);
-});
-
-rotBtn.addEventListener('click', () => {
-  rotation = (rotation + 90) % 360;
-  canvas.style.transform = 'rotate(' + rotation + 'deg)';
-  if (rotation === 90 || rotation === 270) {
-    canvas.style.maxWidth = '100vh';
-    canvas.style.maxHeight = '100vw';
-  } else {
-    canvas.style.maxWidth = '100%';
-    canvas.style.maxHeight = '100%';
-  }
-  if (navigator.vibrate) navigator.vibrate(20);
-});
-
+invBtn.addEventListener('click', () => { invert = !invert; invBtn.classList.toggle('active', invert); if (navigator.vibrate) navigator.vibrate(20); });
+camBtn.addEventListener('click', () => { facingMode = facingMode === 'environment' ? 'user' : 'environment'; camBtn.textContent = facingMode === 'environment' ? 'ЗАДНЯЯ' : 'ПЕРЕДНЯЯ'; startCamera(); if (navigator.vibrate) navigator.vibrate(20); });
+rotBtn.addEventListener('click', () => { rotation = (rotation + 90) % 360; canvas.style.transform = 'rotate(' + rotation + 'deg)'; if (navigator.vibrate) navigator.vibrate(20); });
 snapBtn.addEventListener('click', () => {
   if (navigator.vibrate) navigator.vibrate(30);
-  const saveCanvas = document.createElement('canvas');
-  const scale = Math.max(1, Math.floor(720 / Math.max(W, H)));
-  saveCanvas.width = W * scale;
-  saveCanvas.height = H * scale;
-  const sCtx = saveCanvas.getContext('2d');
-  sCtx.imageSmoothingEnabled = false;
-  sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
-  const dataUrl = saveCanvas.toDataURL('image/png');
-  const link = document.createElement('a');
-  link.download = '0.3MP_' + MODES[mode].replace(/\s+/g, '_') + '_' + Date.now() + '.png';
-  link.href = dataUrl;
-  link.click();
+  const saveCanvas = document.createElement('canvas'), scale = Math.max(1, Math.floor(720 / Math.max(W, H)));
+  saveCanvas.width = W * scale; saveCanvas.height = H * scale;
+  const sCtx = saveCanvas.getContext('2d'); sCtx.imageSmoothingEnabled = false; sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
+  const link = document.createElement('a'); link.download = '0.3MP_' + MODES[mode].replace(/\s+/g, '_') + '_' + Date.now() + '.png'; link.href = saveCanvas.toDataURL('image/png'); link.click();
 });
-
-let recorder = null;
-let recording = false;
-let recChunks = [];
-let recStartTime = 0;
-
+let recorder = null, recording = false, recChunks = [];
 recBtn.addEventListener('click', () => {
   if (navigator.vibrate) navigator.vibrate(30);
   if (!recording) {
-    startRecording();
+    try {
+      const stream = canvas.captureStream(30);
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4';
+      recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 2000000 });
+      recChunks = []; recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(recChunks, { type: mimeType }), url = URL.createObjectURL(blob), link = document.createElement('a');
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'; link.download = '0.3MP_REC_' + Date.now() + '.' + ext; link.href = url; link.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+      };
+      recorder.start(200); recording = true; recBtn.textContent = 'STOP'; recBtn.classList.add('rec-active');
+    } catch (err) { statusEl.textContent = 'REC: ' + err.message; }
   } else {
-    stopRecording();
+    if (recorder && recorder.state !== 'inactive') recorder.stop(); recording = false; recBtn.textContent = 'REC'; recBtn.classList.remove('rec-active');
   }
 });
-
-function startRecording() {
-  try {
-    const stream = canvas.captureStream(30);
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : MediaRecorder.isTypeSupported('video/webm')
-        ? 'video/webm'
-        : 'video/mp4';
-
-    recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 2000000 });
-    recChunks = [];
-    recorder.ondataavailable = function(e) { if (e.data.size > 0) recChunks.push(e.data); };
-    recorder.onstop = function() {
-      const blob = new Blob(recChunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      link.download = '0.3MP_REC_' + Date.now() + '.' + ext;
-      link.href = url;
-      link.click();
-      setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
-    };
-    recorder.start(200);
-    recording = true;
-    recStartTime = performance.now();
-    recBtn.textContent = 'STOP';
-    recBtn.classList.add('rec-active');
-  } catch (err) {
-    statusEl.textContent = 'REC: ' + err.message;
-  }
-}
-
-function stopRecording() {
-  if (recorder && recorder.state !== 'inactive') {
-    recorder.stop();
-  }
-  recording = false;
-  recBtn.textContent = 'REC';
-  recBtn.classList.remove('rec-active');
-}
-
 startCamera();
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(function() {});
-}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 </script>
-
 </body>
 </html>
