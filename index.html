@@ -184,7 +184,6 @@ const contrastVal = document.getElementById('contrastVal');
 const blurSlider = document.getElementById('blur');
 const blurVal = document.getElementById('blurVal');
 
-// === Конфигурация ===
 const RESOLUTIONS = [
   { w: 160, h: 120, label: '160x120' },
   { w: 320, h: 240, label: '320x240' },
@@ -208,12 +207,10 @@ let contrast = 1.25;
 let blurTrail = 0.35;
 let gyroActive = true;
 let facingMode = 'environment';
-let rotation = 0; // 0, 90, 180, 270
+let rotation = 0;
 
-// === Матрица Байера 8x8 ===
 const BAYER8 = new Uint8Array(64);
 (function buildBayer() {
-  // Генерация матрицы Байера 8x8 рекурсивно из 4x4
   const m4 = [
     0, 8, 2, 10,
     12, 4, 14, 6,
@@ -229,7 +226,6 @@ const BAYER8 = new Uint8Array(64);
   }
 })();
 
-// === Буферы ===
 let prevRaw = new Float32Array(W * H * 3);
 let fpnMap = new Float32Array(W * H);
 let hotPixels = new Uint8Array(W * H);
@@ -242,7 +238,6 @@ let fps = 0;
 let fpsFrames = 0;
 let fpsLastTime = performance.now();
 
-// === Vignette-маска ===
 let vignetteMask = null;
 
 function rebuildBuffers() {
@@ -253,7 +248,6 @@ function rebuildBuffers() {
   cachedDynamicNoise = new Float32Array(size * 3);
   vignetteMask = new Float32Array(size);
 
-  // Постоянный шум сенсора
   const colNoise = new Float32Array(W);
   for (let x = 0; x < W; x++) colNoise[x] = (Math.random() - 0.5) * 10;
 
@@ -261,12 +255,10 @@ function rebuildBuffers() {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
       fpnMap[idx] = colNoise[x] + (Math.random() - 0.5) * 6;
-      // Горячие пиксели (0.15% шанс)
       if (Math.random() < 0.0015) hotPixels[idx] = 1;
     }
   }
 
-  // Виньетка
   const cx = W / 2, cy = H / 2;
   const maxR = Math.sqrt(cx * cx + cy * cy);
   for (let y = 0; y < H; y++) {
@@ -283,7 +275,6 @@ function rebuildBuffers() {
 
 rebuildBuffers();
 
-// === Motion ===
 function handleMotion(e) {
   const acc = e.accelerationIncludingGravity || e.acceleration;
   if (!acc || acc.x === null) return;
@@ -298,18 +289,6 @@ function handleMotion(e) {
 
 window.addEventListener('devicemotion', handleMotion);
 
-// === Ориентация ===
-function handleOrientation(e) {
-  if (rotation !== 0) return; // ручной поворот имеет приоритет
-  const angle = (screen.orientation && screen.orientation.angle) ||
-                (window.orientation || 0);
-  // Автоподстройка не нужна, канвас и так масштабируется.
-}
-if (screen.orientation) {
-  screen.orientation.addEventListener('change', () => {});
-}
-
-// === Камера ===
 let currentStream = null;
 
 async function startCamera() {
@@ -335,7 +314,6 @@ async function startCamera() {
   }
 }
 
-// === Цикл кадров ===
 let frameLoopActive = false;
 
 function startFrameLoop() {
@@ -368,7 +346,6 @@ function processFrame() {
     fpsLastTime = now;
   }
 
-  // Кроп по центру под соотношение канваса
   const vw = video.videoWidth, vh = video.videoHeight;
   const vRatio = vw / vh;
   const cRatio = W / H;
@@ -389,7 +366,6 @@ function processFrame() {
   const imgData = ctx.getImageData(0, 0, W, H);
   const data = imgData.data;
 
-  // Хеш для детекта статичной картинки
   let hash = 0;
   for (let k = 0; k < data.length; k += 128) hash = (hash + data[k]) | 0;
   const sensorUpdated = (hash !== lastSensorHash);
@@ -398,7 +374,6 @@ function processFrame() {
   motionIntensity *= 0.94;
   const activeMotion = gyroActive ? motionIntensity : 0.4;
 
-  // Динамический шум (цветной)
   if (sensorUpdated) {
     const amp = 4 + activeMotion * 55;
     for (let j = 0; j < cachedDynamicNoise.length; j++) {
@@ -406,11 +381,9 @@ function processFrame() {
     }
   }
 
-  // Шлейф: при движении короче (короче экспозиция)
   const effectiveTrail = Math.min(0.92, blurTrail * (1 - activeMotion * 0.35));
   const keepNew = 1 - effectiveTrail;
 
-  // Обновление prevRaw
   for (let p = 0; p < W * H; p++) {
     const i = p * 4;
     const p3 = p * 3;
@@ -419,11 +392,9 @@ function processFrame() {
     prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
   }
 
-  // Хроматический сдвиг для RGB-режима
   const shift = mode === 3 ? 1 + Math.round(activeMotion * 4) : 0;
   const inv = invert;
 
-  // Основной проход
   for (let y = 0; y < H; y++) {
     const bayerRow = (y & 7) * 8;
     for (let x = 0; x < W; x++) {
@@ -431,10 +402,8 @@ function processFrame() {
       const i = p * 4;
       const p3 = p * 3;
 
-      // Виньетка
       const vig = vignetteMask[p];
 
-      // Шум
       const nR = fpnMap[p] + cachedDynamicNoise[p3];
       const nG = fpnMap[p] + cachedDynamicNoise[p3 + 1];
       const nB = fpnMap[p] + cachedDynamicNoise[p3 + 2];
@@ -442,7 +411,6 @@ function processFrame() {
       let r, g, b;
 
       if (mode === 3) {
-        // RGB-сдвиг
         const rX = Math.min(W - 1, x + shift);
         const bX = Math.max(0, x - shift);
         const rP = (y * W + rX) * 3;
@@ -476,7 +444,6 @@ function processFrame() {
         r = g = b = val;
       }
 
-      // Горячие пиксели
       if (hotPixels[p]) {
         const flick = Math.random();
         if (flick > 0.7) { r = 255; g = 255; b = 255; }
@@ -497,16 +464,14 @@ function processFrame() {
 
   ctx.putImageData(imgData, 0, 0);
 
-  // Статус
   if (frameCount % 8 === 0) {
     const motPct = Math.round(activeMotion * 100);
     const freezeTag = sensorUpdated ? '' : ' [FREEZE]';
     const recTag = recording ? ' <span class="rec">● REC</span>' : '';
-    statusEl.innerHTML = `${W}×${H} | ${fps} FPS | ДВ:${motPct}%${freezeTag}${recTag}`;
+    statusEl.innerHTML = W + 'x' + H + ' | ' + fps + ' FPS | ДВ:' + motPct + '%' + freezeTag + recTag;
   }
 }
 
-// === UI ===
 contrastSlider.addEventListener('input', () => {
   contrast = contrastSlider.value / 100;
   contrastVal.textContent = contrast.toFixed(2);
@@ -533,8 +498,7 @@ resBtn.addEventListener('click', () => {
 });
 
 gyroBtn.addEventListener('click', async () => {
-  if (typeof DeviceMotionEvent !== 'undefined' &&
-      typeof DeviceMotionEvent.requestPermission === 'function') {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
     try {
       const state = await DeviceMotionEvent.requestPermission();
       if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
@@ -561,9 +525,8 @@ camBtn.addEventListener('click', () => {
 
 rotBtn.addEventListener('click', () => {
   rotation = (rotation + 90) % 360;
-  canvas.style.transform = `rotate(${rotation}deg)`;
+  canvas.style.transform = 'rotate(' + rotation + 'deg)';
   if (rotation === 90 || rotation === 270) {
-    // Меняем пропорции местами, чтобы не растягивалось
     canvas.style.maxWidth = '100vh';
     canvas.style.maxHeight = '100vw';
   } else {
@@ -573,7 +536,6 @@ rotBtn.addEventListener('click', () => {
   if (navigator.vibrate) navigator.vibrate(20);
 });
 
-// === Snap ===
 snapBtn.addEventListener('click', () => {
   if (navigator.vibrate) navigator.vibrate(30);
   const saveCanvas = document.createElement('canvas');
@@ -585,12 +547,11 @@ snapBtn.addEventListener('click', () => {
   sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
   const dataUrl = saveCanvas.toDataURL('image/png');
   const link = document.createElement('a');
-  link.download = `0.3MP_${MODES[mode].replace(/\s+/g, '_')}_${Date.now()}.png`;
+  link.download = '0.3MP_' + MODES[mode].replace(/\s+/g, '_') + '_' + Date.now() + '.png';
   link.href = dataUrl;
   link.click();
 });
 
-// === Запись видео ===
 let recorder = null;
 let recording = false;
 let recChunks = [];
@@ -614,18 +575,18 @@ function startRecording() {
         ? 'video/webm'
         : 'video/mp4';
 
-    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 });
+    recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 2000000 });
     recChunks = [];
-    recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-    recorder.onstop = () => {
+    recorder.ondataavailable = function(e) { if (e.data.size > 0) recChunks.push(e.data); };
+    recorder.onstop = function() {
       const blob = new Blob(recChunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      link.download = `0.3MP_REC_${Date.now()}.${ext}`;
+      link.download = '0.3MP_REC_' + Date.now() + '.' + ext;
       link.href = url;
       link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
     };
     recorder.start(200);
     recording = true;
@@ -646,62 +607,10 @@ function stopRecording() {
   recBtn.classList.remove('rec-active');
 }
 
-// === Старт ===
 startCamera();
 
-// === SW (мягкая регистрация) ===
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
-}
-</script>
-
-</body>
-</html>ontrast + 128 + totalNoise;
-          let val = 0;
-          if (mode === 0) {
-            const threshold = bayer[rowOffset + (x & 3)];
-            val = lum > threshold ? 255 : 0;
-          } else if (mode === 1) {
-            val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
-          } else if (mode === 2) {
-            val = Math.floor(Math.max(0, Math.min(255, lum)) / 36) * 36;
-          } else if (mode === 4) {
-            val = lum > 128 ? 255 : 0;
-          }
-          r = g = b = val;
-        }
-        if (invert) {
-          r = 255 - r;
-          g = 255 - g;
-          b = 255 - b;
-        }
-        data[i] = r;
-        data[i + 1] = g;
-        data[i + 2] = b;
-      }
-    }
-    ctx.putImageData(imgData, 0, 0);
-  }
-  requestAnimationFrame(processFrame);
-}
-
-snapBtn.addEventListener('click', () => {
-  const saveCanvas = document.createElement('canvas');
-  const scale = Math.max(1, Math.floor(480 / W));
-  saveCanvas.width = W * scale;
-  saveCanvas.height = H * scale;
-  const sCtx = saveCanvas.getContext('2d');
-  sCtx.imageSmoothingEnabled = false;
-  sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
-  const dataUrl = saveCanvas.toDataURL('image/jpeg', 0.12);
-  const link = document.createElement('a');
-  link.download = `03MP_${modes[mode].replace(/\s+/g, '')}_${Date.now()}.jpg`;
-  link.href = dataUrl;
-  link.click();
-});
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js');
+  navigator.serviceWorker.register('./sw.js').catch(function() {});
 }
 </script>
 
