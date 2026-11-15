@@ -1,9 +1,8 @@
-const CACHE_NAME = 'dither-cam-v1';
+const CACHE_NAME = 'dither-cam-v3';
 const ASSETS = [
   './',
   './index.html',
-  './manifest.json',
-  './icon.svg'
+  './manifest.json'
 ];
 
 self.addEventListener('install', event => {
