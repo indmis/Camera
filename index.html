@@ -7,24 +7,27 @@
 <title>0.3MP Dither Cam v2</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
-  body {
+  html, body {
+    width: 100%; height: 100%;
     background: #0d0d0d;
     color: #fff;
     font-family: 'Courier New', monospace;
+    overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  body {
     display: flex;
     flex-direction: column;
     height: 100dvh;
-    overflow: hidden;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   #viewfinder {
     flex: 1;
     position: relative;
+    background: #000;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
-    overflow: hidden;
   }
   video {
     position: absolute;
@@ -32,10 +35,12 @@
     opacity: 0.01;
     pointer-events: none;
   }
+  /* === Канвас на весь экран, с cover === */
   canvas {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
   }
@@ -52,6 +57,7 @@
     line-height: 1.5;
     font-weight: bold;
     letter-spacing: 0.5px;
+    z-index: 10;
   }
   #status .rec { color: #f33; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: 0.3; } }
@@ -62,6 +68,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex-shrink: 0;
   }
   .slider-row {
     display: flex;
@@ -148,7 +155,7 @@
   </div>
   <div class="btn-row">
     <button id="modeBtn">ДИЗЕР 1-BIT</button>
-    <button id="resBtn">320x240</button>
+    <button id="resBtn">240x320</button>
     <button id="gyroBtn">ГИРО: АВТО</button>
   </div>
   <div class="btn-row">
@@ -184,10 +191,11 @@ const contrastVal = document.getElementById('contrastVal');
 const blurSlider = document.getElementById('blur');
 const blurVal = document.getElementById('blurVal');
 
+// === Вертикальные разрешения (портрет) ===
 const RESOLUTIONS = [
-  { w: 160, h: 120, label: '160x120' },
-  { w: 320, h: 240, label: '320x240' },
-  { w: 480, h: 360, label: '480x360' }
+  { w: 120, h: 160, label: '120x160' },
+  { w: 240, h: 320, label: '240x320' },
+  { w: 360, h: 480, label: '360x480' }
 ];
 const MODES = [
   'ДИЗЕР 1-BIT',
@@ -209,20 +217,12 @@ let gyroActive = true;
 let facingMode = 'environment';
 let rotation = 0;
 
-const BAYER8 = new Uint8Array(64);
-(function buildBayer() {
-  const m4 = [
-    0, 8, 2, 10,
-    12, 4, 14, 6,
-    3, 11, 1, 9,
-    15, 7, 13, 5
-  ];
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      const base = m4[(y % 4) * 4 + (x % 4)];
-      const add = ((y >> 2) * 2 + (x >> 2)) * 16;
-      BAYER8[y * 8 + x] = Math.floor((base + add) * 255 / 64);
-    }
+// === Байер 4x4 с плавными порогами (без явной сетки) ===
+const BAYER4 = new Uint8Array(16);
+(function buildBayer4() {
+  const m = [ 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 ];
+  for (let i = 0; i < 16; i++) {
+    BAYER4[i] = Math.floor((m[i] + 0.5) * 255 / 16);
   }
 })();
 
@@ -299,8 +299,8 @@ async function startCamera() {
     const constraints = {
       video: {
         facingMode: facingMode,
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 720 },
+        height: { ideal: 1280 },
         frameRate: { ideal: 30 }
       },
       audio: false
@@ -395,8 +395,12 @@ function processFrame() {
   const shift = mode === 3 ? 1 + Math.round(activeMotion * 4) : 0;
   const inv = invert;
 
+  // === Рандомизация порога для устранения видимой сетки ===
+  // Вносим лёгкий случайный шум в порог Байера, чтобы паттерн не бросался в глаза
+  const randomThresholdJitter = 6;
+
   for (let y = 0; y < H; y++) {
-    const bayerRow = (y & 7) * 8;
+    const bayerRow = (y & 3) * 4;
     for (let x = 0; x < W; x++) {
       const p = y * W + x;
       const i = p * 4;
@@ -432,7 +436,9 @@ function processFrame() {
 
         let val = 0;
         if (mode === 0) {
-          const thr = BAYER8[bayerRow + (x & 7)];
+          // Байер 4x4 + небольшой джиттер, чтобы убрать сетку
+          const baseThr = BAYER4[bayerRow + (x & 3)];
+          const thr = baseThr + (Math.random() - 0.5) * randomThresholdJitter;
           val = lum > thr ? 255 : 0;
         } else if (mode === 1) {
           val = lum < 64 ? 0 : lum < 128 ? 64 : lum < 192 ? 128 : 255;
