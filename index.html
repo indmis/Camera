@@ -24,11 +24,12 @@
     background: #000;
     overflow: hidden;
   }
-  /* Скрываем видео так, чтобы мобильный браузер не ставил его на паузу */
   video {
     position: absolute;
-    width: 1px;
-    height: 1px;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 2px;
     opacity: 0.01;
     pointer-events: none;
   }
@@ -37,6 +38,16 @@
     height: 100%;
     object-fit: contain;
     image-rendering: pixelated;
+  }
+  #status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.7);
+    color: #0f0;
+    font-size: 11px;
+    padding: 3px 6px;
+    pointer-events: none;
   }
   #controls {
     padding: 15px;
@@ -69,10 +80,11 @@
 <div id="viewfinder">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
+  <div id="status">ЗАПУСК КАМЕРЫ...</div>
 </div>
 
 <div id="controls">
-  <button id="modeBtn">РЕЖИМ: ДИЗЕР</button>
+  <button id="modeBtn">ДИЗЕР 1-BIT</button>
   <button id="snap">СНЯТЬ</button>
 </div>
 
@@ -82,6 +94,7 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const modeBtn = document.getElementById('modeBtn');
 const snapBtn = document.getElementById('snap');
+const statusEl = document.getElementById('status');
 
 const W = 240;
 const H = 320;
@@ -89,14 +102,17 @@ canvas.width = W;
 canvas.height = H;
 
 let mode = 0;
-const modes = ['ДИЗЕР 1-BIT', 'КСЕРОКС 2-BIT'];
+const modes = ['ДИЗЕР 1-BIT', 'КСЕРОКС 2-BIT', 'ГРЯЗНОЕ Ч/Б'];
 
-// Полная матрица Байера 4x4 (значения от 0 до 255)
-const bayer4x4 = [,
- ,
- ,
-  [240, 120, 210, 90]
-];
+// Одномерный массив матрицы Байера 4x4 (одинарные скобки не съедаются при копировании)
+const bayer = new Uint8Array([
+   15, 135,  45, 165,
+  195,  75, 225, 105,
+   60, 180,  30, 150,
+  240, 120, 210,  90
+]);
+
+let frameCount = 0;
 
 navigator.mediaDevices.getUserMedia({
   video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
@@ -104,13 +120,9 @@ navigator.mediaDevices.getUserMedia({
 }).then(stream => {
   video.srcObject = stream;
   video.play();
-}).catch(err => {
-  alert('Ошибка камеры: ' + err.message);
-});
-
-// Запускаем цикл строго после того, как пошло живое видео
-video.addEventListener('playing', () => {
   requestAnimationFrame(processFrame);
+}).catch(err => {
+  statusEl.textContent = 'ОШИБКА: ' + err.message;
 });
 
 modeBtn.addEventListener('click', () => {
@@ -120,6 +132,11 @@ modeBtn.addEventListener('click', () => {
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
+    frameCount++;
+    if (frameCount % 15 === 0) {
+      statusEl.textContent = `LIVE | ${W}x${H} | КАДР #${frameCount}`;
+    }
+
     const vRatio = video.videoWidth / video.videoHeight;
     const cRatio = W / H;
     let sx, sy, sw, sh;
@@ -140,6 +157,7 @@ function processFrame() {
     const data = imgData.data;
 
     for (let y = 0; y < H; y++) {
+      const rowOffset = (y & 3) << 2;
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
         let lum = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
@@ -147,10 +165,14 @@ function processFrame() {
 
         let val = 0;
         if (mode === 0) {
-          const threshold = bayer4x4[y % 4][x % 4];
+          const threshold = bayer[rowOffset + (x & 3)];
           val = lum > threshold ? 255 : 0;
-        } else {
+        } else if (mode === 1) {
           val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
+        } else {
+          // 8 уровней серого + легкий цифровой шум
+          const noise = (Math.random() - 0.5) * 35;
+          val = Math.floor(Math.max(0, Math.min(255, lum + noise)) / 36) * 36;
         }
 
         data[i] = data[i+1] = data[i+2] = val;
