@@ -143,7 +143,6 @@
     <button id="rec">REC</button>
   </div>
 </div>
-
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -186,9 +185,13 @@ let fpnMap = null;
 let lastSensorHash = 0;
 let cachedDynamicNoise = null;
 
-// Гироскоп всегда активен
 let lastAcc = { x: 0, y: 0, z: 0 };
 let motionIntensity = 0;
+
+// Смещение «звёздного неба» от гироскопа
+let starOffsetX = 0;
+let starOffsetY = 0;
+const STAR_PARALLAX = 6; 
 
 const bayer = new Uint8Array(16);
 const bayerSrc = "0,128,32,160,192,64,224,96,48,176,16,144,240,112,208,80".split(",");
@@ -211,6 +214,9 @@ function initSensorBuffers() {
       fpnMap[idx] = n;
     }
   }
+
+  starOffsetX = 0;
+  starOffsetY = 0;
 }
 
 initSensorBuffers();
@@ -226,6 +232,14 @@ function handleMotion(e) {
   const delta = Math.sqrt(dx * dx + dy * dy + dz * dz);
   const instant = Math.min(1, delta / 4.5);
   motionIntensity = Math.max(instant, motionIntensity * 0.85);
+
+  // Накопление смещения «звёздного неба»
+  starOffsetX -= dx * STAR_PARALLAX * 0.1;
+  starOffsetY += dy * STAR_PARALLAX * 0.1;
+
+  // Мягкое затухание, чтобы точки возвращались, если телефон стоит
+  starOffsetX *= 0.995;
+  starOffsetY *= 0.995;
 }
 
 // Запрос разрешения на iOS и включение гироскопа
@@ -309,7 +323,7 @@ function processFrame() {
     lastSensorHash = hash;
 
     motionIntensity *= 0.94;
-    const activeMotion = motionIntensity; // Гироскоп всегда влияет
+    const activeMotion = motionIntensity;
 
     if (sensorUpdated) {
       const noiseAmp = 6 + activeMotion * 50;
@@ -325,7 +339,6 @@ function processFrame() {
       statusEl.innerHTML = `${W}x${H} | ДВИЖ:${motPct}%${freezeTag}${recTag}`;
     }
 
-    // Шлейф (trail) жестко задан 0.35
     const effectiveTrail = 0.35;
     const keepNew = 1 - effectiveTrail;
 
@@ -344,7 +357,14 @@ function processFrame() {
         const i = p * 4;
         const p3 = p * 3;
 
-        const totalNoise = fpnMap[p] + cachedDynamicNoise[p];
+        // Смещение выборки шума по гироскопу
+        let sampleX = x + Math.round(starOffsetX);
+        let sampleY = y + Math.round(starOffsetY);
+        sampleX = ((sampleX % W) + W) % W;
+        sampleY = ((sampleY % H) + H) % H;
+        const starIdx = sampleY * W + sampleX;
+
+        const totalNoise = fpnMap[starIdx] + cachedDynamicNoise[p];
 
         let r = prevRaw[p3];
         let g = prevRaw[p3 + 1];
@@ -408,7 +428,6 @@ snapBtn.addEventListener('click', () => {
   link.click();
 });
 
-// === ЗАПИСЬ ВИДЕО ===
 let recorder = null;
 let recording = false;
 let recChunks = [];
