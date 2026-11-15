@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d0d">
-<title>0.3MP Dither Cam — Datamosh</title>
+<title>SURVEILLANCE CAM // CLEAN VIEW</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; background: #0d0d0d; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
@@ -47,8 +47,8 @@
   </div>
   <div class="slider-row">
     <span>ДАТАМОШ</span>
-    <input type="range" id="blur" min="0" max="100" value="65">
-    <span id="blurVal">65%</span>
+    <input type="range" id="blur" min="0" max="100" value="50">
+    <span id="blurVal">50%</span>
   </div>
   <div class="btn-row">
     <button id="modeBtn">ДИЗЕР 1-BIT</button>
@@ -83,14 +83,18 @@ const contrastSlider = document.getElementById('contrast');
 const contrastVal = document.getElementById('contrastVal');
 const blurSlider = document.getElementById('blur');
 const blurVal = document.getElementById('blurVal');
+
 const RESOLUTIONS = [{ w: 120, h: 160, label: '120x160' }, { w: 240, h: 320, label: '240x320' }, { w: 360, h: 480, label: '360x480' }];
 const MODES = ['ДИЗЕР 1-BIT', 'КСЕРОКС 2-BIT', 'ГРЯЗЬ + ШУМ', 'БРЕЛОК RGB', 'ПОРОГ 1-BIT'];
 const MODES_COUNT = MODES.length;
+
 let resIdx = 1, W = RESOLUTIONS[resIdx].w, H = RESOLUTIONS[resIdx].h;
-let mode = 0, invert = false, contrast = 1.25, moshAmount = 0.65;
+let mode = 0, invert = false, contrast = 1.25, moshAmount = 0.50;
 let gyroActive = true, facingMode = 'environment', rotation = 0;
+
 const BAYER4 = new Uint8Array(16);
 (function() { const m = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]; for (let i = 0; i < 16; i++) BAYER4[i] = Math.floor((m[i] + 0.5) * 255 / 16); })();
+
 let prevRaw = new Float32Array(W * H * 3);
 let moshBuffer = new Float32Array(W * H * 3);
 let fpnMap = new Float32Array(W * H);
@@ -99,19 +103,20 @@ let cachedDynamicNoise = new Float32Array(W * H * 3);
 let motionIntensity = 0, lastAcc = { x: 0, y: 0, z: 0 };
 let lastSensorHash = 0, frameCount = 0, fps = 0, fpsFrames = 0, fpsLastTime = performance.now();
 let vignetteMask = null;
+
 const BLOCK = 8, SEARCH_RADIUS = 8, SMALL_SCALE = 2;
 let frameSinceReset = 0, smallLum = null, prevSmallLum = null, smallW = 0, smallH = 0;
+
 function rebuildBuffers() {
   const size = W * H;
   prevRaw = new Float32Array(size * 3); moshBuffer = new Float32Array(size * 3);
   fpnMap = new Float32Array(size); hotPixels = new Uint8Array(size);
   cachedDynamicNoise = new Float32Array(size * 3); vignetteMask = new Float32Array(size);
   
-  // === ФИКС: Убран colNoise, шум теперь случайный по всей матрице ===
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
-      fpnMap[idx] = (Math.random() - 0.5) * 4; // Было colNoise[x] + ...
+      fpnMap[idx] = (Math.random() - 0.5) * 4;
       if (Math.random() < 0.0015) hotPixels[idx] = 1;
     }
   }
@@ -128,6 +133,7 @@ function rebuildBuffers() {
   canvas.width = W; canvas.height = H;
 }
 rebuildBuffers();
+
 function handleMotion(e) {
   const acc = e.accelerationIncludingGravity || e.acceleration;
   if (!acc || acc.x === null) return;
@@ -137,6 +143,7 @@ function handleMotion(e) {
   motionIntensity = Math.max(Math.min(1, delta / 4.0), motionIntensity * 0.88);
 }
 window.addEventListener('devicemotion', handleMotion);
+
 let currentStream = null;
 async function startCamera() {
   if (currentStream) currentStream.getTracks().forEach(t => t.stop());
@@ -145,6 +152,7 @@ async function startCamera() {
     video.srcObject = currentStream; await video.play(); startFrameLoop();
   } catch (err) { statusEl.textContent = 'КАМЕРА: ' + err.message; }
 }
+
 let frameLoopActive = false;
 function startFrameLoop() {
   if (frameLoopActive) return; frameLoopActive = true;
@@ -156,6 +164,7 @@ function startFrameLoop() {
     requestAnimationFrame(loop);
   }
 }
+
 function buildSmallLum(data) {
   for (let sy = 0; sy < smallH; sy++) {
     for (let sx = 0; sx < smallW; sx++) {
@@ -172,6 +181,7 @@ function buildSmallLum(data) {
     }
   }
 }
+
 function findBlockVector(bx, by) {
   const sx0 = Math.floor(bx / SMALL_SCALE), sy0 = Math.floor(by / SMALL_SCALE);
   const bwS = Math.max(1, Math.floor(BLOCK / SMALL_SCALE)), bhS = Math.max(1, Math.floor(BLOCK / SMALL_SCALE));
@@ -190,6 +200,7 @@ function findBlockVector(bx, by) {
   if (len > SEARCH_RADIUS * 0.9) return { reset: true, dx: 0, dy: 0 };
   return { reset: false, dx: dxPx, dy: dyPx };
 }
+
 function applyDatamosh(data) {
   const src = moshBuffer, dst = prevRaw;
   for (let by = 0; by < H; by += BLOCK) {
@@ -213,6 +224,7 @@ function applyDatamosh(data) {
   }
   moshBuffer.set(dst);
 }
+
 function processFrame() {
   if (video.readyState < 2 || video.videoWidth === 0) return;
   frameCount++; fpsFrames++;
@@ -222,20 +234,26 @@ function processFrame() {
   let sx, sy, sw, sh;
   if (vRatio > cRatio) { sh = vh; sw = sh * cRatio; sx = (vw - sw) / 2; sy = 0; }
   else { sw = vw; sh = sw / cRatio; sx = 0; sy = (vh - sh) / 2; }
+  
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
   const imgData = ctx.getImageData(0, 0, W, H), data = imgData.data;
+  
   let hash = 0; for (let k = 0; k < data.length; k += 128) hash = (hash + data[k]) | 0;
   const sensorUpdated = (hash !== lastSensorHash); lastSensorHash = hash;
   motionIntensity *= 0.94; const activeMotion = gyroActive ? motionIntensity : 0.4;
+  
   if (sensorUpdated) { const amp = 4 + activeMotion * 55; for (let j = 0; j < cachedDynamicNoise.length; j++) cachedDynamicNoise[j] = (Math.random() - 0.5) * amp; }
+  
   buildSmallLum(data); frameSinceReset++;
   const resetEvery = Math.max(1, Math.round(moshAmount * 20));
   if (frameCount === 1 || frameSinceReset >= resetEvery) {
     for (let p = 0; p < W * H; p++) { const i = p * 4, p3 = p * 3; moshBuffer[p3] = data[i]; moshBuffer[p3+1] = data[i+1]; moshBuffer[p3+2] = data[i+2]; }
     frameSinceReset = 0;
   } else { applyDatamosh(data); }
+  
   prevSmallLum.set(smallLum);
   const shift = mode === 3 ? 1 + Math.round(activeMotion * 4) : 0, inv = invert, jitter = 6;
+  
   for (let y = 0; y < H; y++) {
     const bayerRow = (y & 3) * 4;
     for (let x = 0; x < W; x++) {
@@ -266,11 +284,14 @@ function processFrame() {
     }
   }
   ctx.putImageData(imgData, 0, 0);
+  
   if (frameCount % 8 === 0) {
     const motPct = Math.round(activeMotion * 100), freezeTag = sensorUpdated ? '' : ' [FREEZE]', recTag = recording ? ' <span class="rec">● REC</span>' : '';
     statusEl.innerHTML = W + 'x' + H + ' | ' + fps + ' FPS | ДВ:' + motPct + '% | MOSH:' + Math.round(moshAmount*100) + '%' + freezeTag + recTag;
   }
 }
+
+// UI Events
 contrastSlider.addEventListener('input', () => { contrast = contrastSlider.value / 100; contrastVal.textContent = contrast.toFixed(2); });
 blurSlider.addEventListener('input', () => { moshAmount = blurSlider.value / 100; blurVal.textContent = blurSlider.value + '%'; });
 modeBtn.addEventListener('click', () => { mode = (mode + 1) % MODES_COUNT; modeBtn.textContent = MODES[mode]; if (navigator.vibrate) navigator.vibrate(20); });
@@ -284,13 +305,94 @@ gyroBtn.addEventListener('click', async () => {
 invBtn.addEventListener('click', () => { invert = !invert; invBtn.classList.toggle('active', invert); if (navigator.vibrate) navigator.vibrate(20); });
 camBtn.addEventListener('click', () => { facingMode = facingMode === 'environment' ? 'user' : 'environment'; camBtn.textContent = facingMode === 'environment' ? 'ЗАДНЯЯ' : 'ПЕРЕДНЯЯ'; startCamera(); if (navigator.vibrate) navigator.vibrate(20); });
 rotBtn.addEventListener('click', () => { rotation = (rotation + 90) % 360; canvas.style.transform = 'rotate(' + rotation + 'deg)'; if (navigator.vibrate) navigator.vibrate(20); });
+
+// === ГЛАВНАЯ МАГИЯ: СНИМОК С ГРЯЗЬЮ ===
 snapBtn.addEventListener('click', () => {
-  if (navigator.vibrate) navigator.vibrate(30);
-  const saveCanvas = document.createElement('canvas'), scale = Math.max(1, Math.floor(720 / Math.max(W, H)));
+  if (navigator.vibrate) navigator.vibrate([30, 50, 30]); // Двойная вибрация
+  
+  // 1. Создаем холст для снимка
+  const saveCanvas = document.createElement('canvas');
+  const scale = Math.max(1, Math.floor(720 / Math.max(W, H)));
   saveCanvas.width = W * scale; saveCanvas.height = H * scale;
-  const sCtx = saveCanvas.getContext('2d'); sCtx.imageSmoothingEnabled = false; sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
-  const link = document.createElement('a'); link.download = '0.3MP_' + MODES[mode].replace(/\s+/g, '_') + '_' + Date.now() + '.png'; link.href = saveCanvas.toDataURL('image/png'); link.click();
+  const sCtx = saveCanvas.getContext('2d', { willReadFrequently: true });
+  sCtx.imageSmoothingEnabled = false;
+  sCtx.drawImage(canvas, 0, 0, saveCanvas.width, saveCanvas.height);
+
+  // 2. Получаем данные снимка
+  const imgData = sCtx.getImageData(0, 0, saveCanvas.width, saveCanvas.height);
+  const data = imgData.data;
+  const sW = saveCanvas.width, sH = saveCanvas.height;
+
+  // 3. Эффект "Битый JPEG" и "Слежка"
+  const blockSize = 32;
+  
+  // Смещение блоков (потеря пакетов)
+  for (let by = 0; by < sH; by += blockSize) {
+    for (let bx = 0; bx < sW; bx += blockSize) {
+      if (Math.random() > 0.85) { // 15% шанс сбоя для каждого блока
+        // Смещаем блок по X или Y
+        const shiftX = Math.floor((Math.random() - 0.5) * 20);
+        const shiftY = Math.floor((Math.random() - 0.5) * 20);
+        
+        for (let y = 0; y < blockSize; y++) {
+          for (let x = 0; x < blockSize; x++) {
+            const srcX = Math.min(sW - 1, Math.max(0, bx + x + shiftX));
+            const srcY = Math.min(sH - 1, Math.max(0, by + y + shiftY));
+            const dstP = ((by + y) * sW + (bx + x)) * 4;
+            const srcP = (srcY * sW + srcX) * 4;
+            
+            if (by + y < sH && bx + x < sW) {
+              data[dstP] = data[srcP];
+              data[dstP+1] = data[srcP+1];
+              data[dstP+2] = data[srcP+2];
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  sCtx.putImageData(imgData, 0, 0); // Возвращаем смещенные блоки
+
+  // 4. Рисуем паранойю (текст и прицел)
+  const now = new Date();
+  const timeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+  
+  // Текст камеры наблюдения
+  sCtx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+  sCtx.font = 'bold ' + Math.floor(sH / 30) + 'px monospace';
+  sCtx.fillText('SEC_CAM_04 // ' + timeStr, 20, 40);
+  sCtx.fillText('GPS: 55.7558, 37.6173', 20, 40 + Math.floor(sH / 25));
+  sCtx.fillText('REC: ●', sW - 100, 40);
+  
+  // Если выпал шанс 1 к 3 — рисуем прицел
+  if (Math.random() < 0.33) {
+    const cx = sW / 2, cy = sH / 2;
+    sCtx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+    sCtx.lineWidth = 2;
+    sCtx.beginPath();
+    // Горизонтальная линия
+    sCtx.moveTo(0, cy); sCtx.lineTo(sW, cy);
+    // Вертикальная линия
+    sCtx.moveTo(cx, 0); sCtx.lineTo(cx, sH);
+    // Круг
+    sCtx.arc(cx, cy, Math.min(sW, sH) * 0.2, 0, Math.PI * 2);
+    sCtx.stroke();
+    
+    // Текст-угроза
+    sCtx.fillStyle = 'rgba(255, 0, 0, 0.9)';
+    sCtx.font = 'bold ' + Math.floor(sH / 20) + 'px monospace';
+    sCtx.fillText('TARGET ACQUIRED', cx - sW*0.35, cy - sH*0.25);
+  }
+
+  // 5. Сохраняем и скачиваем
+  const link = document.createElement('a');
+  link.download = 'EVIDENCE_' + Date.now() + '.png'; // Зловещее имя файла
+  link.href = saveCanvas.toDataURL('image/png');
+  link.click();
 });
+
+// Запись видео (остается без изменений)
 let recorder = null, recording = false, recChunks = [];
 recBtn.addEventListener('click', () => {
   if (navigator.vibrate) navigator.vibrate(30);
@@ -310,6 +412,7 @@ recBtn.addEventListener('click', () => {
     if (recorder && recorder.state !== 'inactive') recorder.stop(); recording = false; recBtn.textContent = 'REC'; recBtn.classList.remove('rec-active');
   }
 });
+
 startCamera();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 </script>
