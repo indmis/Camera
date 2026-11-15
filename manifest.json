@@ -2,16 +2,23 @@
   "name": "0.3MP Dither Cam",
   "short_name": "0.3MP Cam",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#111111",
   "theme_color": "#111111",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADAAQMAAABoEv5EAAAABlBMVEUREREAAABV9/8bAAAAAXRSTlMAQObYZgAAADtJREFUeNrtwTEBAAAAwiD7p7bGDmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwKsB4AAB08C45AAAAABJRU5ErkJggg==",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIAAQMAAADOtka5AAAABlBMVEUREREAAABV9/8bAAAAAXRSTlMAQObYZgAAAEpJREFUeNrtwQEBAAAAgiD/r25IQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPBmE+gAAcP0p6MAAAAASUVORK5CYII=",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
