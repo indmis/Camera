@@ -202,6 +202,34 @@ snapBtn.addEventListener('click', () => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
        }
+ // Автогенерация PNG-иконки 512x512 для корректной установки PWA в Chrome
+(async function attachPngIcon() {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#111111';
+  g.fillRect(0, 0, 512, 512);
+  g.fillStyle = '#ffffff';
+  g.fillRect(64, 128, 384, 288);
+  g.fillRect(160, 64, 192, 64);
+  g.fillStyle = '#111111';
+  g.fillRect(192, 192, 128, 160);
+  g.fillStyle = '#ffffff';
+  g.fillRect(224, 224, 64, 96);
+
+  c.toBlob(async (blob) => {
+    const iconUrl = URL.createObjectURL(blob);
+    const res = await fetch('./manifest.json');
+    const manifest = await res.json();
+    manifest.icons = [
+      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' }
+    ];
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const link = document.querySelector('link[rel="manifest"]');
+    if (link) link.href = URL.createObjectURL(manifestBlob);
+  }, 'image/png');
+})();
 </script>
 </body>
 </html>
