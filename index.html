@@ -188,7 +188,6 @@ let cachedDynamicNoise = null;
 let lastAcc = { x: 0, y: 0, z: 0 };
 let motionIntensity = 0;
 
-// Смещение «звёздного неба» от гироскопа
 let starOffsetX = 0;
 let starOffsetY = 0;
 const STAR_PARALLAX = 6;
@@ -250,7 +249,6 @@ if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.request
   window.addEventListener('devicemotion', handleMotion);
 }
 
-// === ЗАПУСК И ВОССТАНОВЛЕНИЕ КАМЕРЫ ===
 let currentStream = null;
 let frameLoopActive = false;
 
@@ -448,7 +446,6 @@ snapBtn.addEventListener('click', () => {
   link.click();
 });
 
-// === ЗАПИСЬ ВИДЕО ===
 let recorder = null;
 let recording = false;
 let recChunks = [];
@@ -488,7 +485,6 @@ function startRecording() {
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }).catch(err => {
-        // Если патч не удался — сохраняем сырой файл
         statusEl.textContent = 'FIX FAIL, SAVING RAW';
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -517,17 +513,14 @@ function stopRecording() {
   recBtn.classList.remove('rec-active');
 }
 
-// === ПАТЧ ДЛИТЕЛЬНОСТИ WEBM (встроенная библиотека) ===
+// === УНИВЕРСАЛЬНЫЙ ПАТЧ ДЛИТЕЛЬНОСТИ WEBM ===
+async function fixWebmDuration(blob, durationMs) {
+  if (blob.type.includes('mp4')) return blob;
 
- // === ПОЛНОЦЕННАЯ ВСТАВКА DURATION В WEBM ===
-function fixWebmDuration(blob, durationMs) {
-  if (blob.type.includes('mp4')) return Promise.resolve(blob);
-
-  return blob.arrayBuffer().then(buffer => {
+  try {
+    const buffer = await blob.arrayBuffer();
     const data = new Uint8Array(buffer);
-    const duration = durationMs;
 
-    // --- Чтение VINT (Variable Length Integer) ---
     function readVint(pos) {
       const first = data[pos];
       let length = 1;
@@ -541,181 +534,113 @@ function fixWebmDuration(blob, durationMs) {
       for (let i = 1; i < length; i++) {
         value = (value << 8) | data[pos + i];
       }
-      // Для Unknown Size (все биты 1) возвращаем -1
-      let allOnes = (first & (mask - 1)) === (mask - 1);
-      for (let i = 1; i < length; i++) {
-        if (data[pos + i] !== 0xFF) allOnes = false;
+      return { length, value };
+    }
+
+    let pos = 0;
+    let segmentPos = -1;
+    let segmentSizePos = -1;
+    let segmentDataStart = -1;
+    let segmentSize = 0;
+
+    while (pos < data.length) {
+      const id = readVint(pos);
+      if (!id) break;
+      let idVal = 0;
+      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
+      const size = readVint(pos + id.length);
+      if (!size) break;
+      const dataStart = pos + id.length + size.length;
+      if (idVal === 0x18538067) {
+        segmentPos = pos;
+        segmentSizePos = pos + id.length;
+        segmentDataStart = dataStart;
+        segmentSize = size.value;
+        break;
       }
-      return { length, value: allOnes ? -1 : value, allOnes };
+      if (size.value === -1) break;
+      pos = dataStart + size.value;
     }
 
-    // --- Поиск EBML-элемента по ID ---
-    function findElement(start, end, id) {
-      let pos = start;
-      while (pos < end) {
-        const idVint = readVint(pos);
-        if (!idVint) break;
-        // ID читается как VINT, но не маскируется
-        let idVal = 0;
-        const idLen = idVint.length;
-        for (let i = 0; i < idLen; i++) idVal = (idVal << 8) | data[pos + i];
-        const sizeVint = readVint(pos + idLen);
-        if (!sizeVint) break;
-        const dataStart = pos + idLen + sizeVint.length;
-        const dataEnd = sizeVint.value === -1 ? end : dataStart + sizeVint.value;
+    if (segmentPos === -1) return blob;
 
-        if (idVal === id) {
-          return { pos, idLen, sizeLen: sizeVint.length, size: sizeVint.value, dataStart, dataEnd };
-        }
-        if (sizeVint.value === -1) break;
-        pos = dataEnd;
+    pos = segmentDataStart;
+    let infoPos = -1;
+    let infoSizePos = -1;
+    let infoDataStart = -1;
+    let infoSize = 0;
+
+    while (pos < data.length) {
+      const id = readVint(pos);
+      if (!id) break;
+      let idVal = 0;
+      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
+      const size = readVint(pos + id.length);
+      if (!size) break;
+      const dataStart = pos + id.length + size.length;
+      if (idVal === 0x1549A966) {
+        infoPos = pos;
+        infoSizePos = pos + id.length;
+        infoDataStart = dataStart;
+        infoSize = size.value;
+        break;
       }
-      return null;
+      if (size.value === -1) break;
+      pos = dataStart + size.value;
     }
 
-    // ID: Segment = 0x18538067, Info = 0x1549A966, Duration = 0x4489
-    const SEGMENT_ID = 0x18538067;
-    const INFO_ID = 0x1549A966;
-    const DURATION_ID = 0x4489;
+    if (infoPos === -1) return blob;
 
-    const segment = findElement(0, data.length, SEGMENT_ID);
-    if (!segment) return blob;
-
-    const info = findElement(segment.dataStart, Math.min(segment.dataEnd, data.length), INFO_ID);
-    if (!info) return blob;
-
-    // Проверяем, есть ли уже Duration внутри Info
-    let durPos = info.dataStart;
-    let hasDuration = false;
-    while (durPos < Math.min(info.dataEnd, data.length)) {
-      const el = findElement(durPos, Math.min(info.dataEnd, data.length), DURATION_ID);
-      if (el) { hasDuration = true; break; }
-      // Переход к следующему элементу Info
-      const idVint = readVint(durPos);
-      if (!idVint) break;
-      const idLen = idVint.length;
-      const sizeVint = readVint(durPos + idLen);
-      if (!sizeVint || sizeVint.value === -1) break;
-      durPos = durPos + idLen + sizeVint.length + sizeVint.value;
-    }
-
-    // Подготавливаем 8 байт float64 big-endian
     const float64 = new Float64Array(1);
-    float64[0] = duration;
-    const f64View = new DataView(float64.buffer);
+    float64[0] = durationMs;
+    const view = new DataView(float64.buffer);
     const durBytes = new Uint8Array(8);
-    for (let i = 0; i < 8; i++) durBytes[i] = f64View.getUint8(7 - i);
-
-    // Собираем новый блок Duration: ID(0x44 0x89) + Size(0x88) + 8 байт
+    for (let i = 0; i < 8; i++) durBytes[i] = view.getUint8(7 - i);
     const durBlock = new Uint8Array([0x44, 0x89, 0x88, ...durBytes]);
 
-    // Если Duration уже есть, но размер не 8 байт — ищем и заменяем
-    if (hasDuration) {
-      const existingDur = findElement(info.dataStart, info.dataEnd, DURATION_ID);
-      if (existingDur && existingDur.size === 8) {
+    // Ищем существующий Duration
+    pos = infoDataStart;
+    const infoEnd = infoSize === -1 ? data.length : infoDataStart + infoSize;
+    let durationDataPos = -1;
+
+    while (pos < infoEnd) {
+      const id = readVint(pos);
+      if (!id) break;
+      let idVal = 0;
+      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
+      const size = readVint(pos + id.length);
+      if (!size) break;
+      const dataStart = pos + id.length + size.length;
+      if (idVal === 0x4489) {
+        durationDataPos = dataStart;
+        break;
+      }
+      if (size.value === -1) break;
+      pos = dataStart + size.value;
+    }
+
+    if (durationDataPos !== -1) {
+      if (data[durationDataPos - 1] === 0x88) {
         const out = new Uint8Array(data);
-        for (let i = 0; i < 8; i++) out[existingDur.dataStart + i] = durBytes[i];
-        return new Blob([out], { type: blob.type });
+        for (let i = 0; i < 8; i++) out[durationDataPos + i] = durBytes[i];
+        return new Blob([out], { type: 'video/webm' });
       }
     }
 
-    // Иначе — вставляем новый Duration в Info
-    // Увеличиваем размер Info на длину нового блока (8 байт данных + заголовок)
-    // Но нужно пересчитать размер Info, а затем размер Segment
+    // Вставляем Duration в конец Info
+    const insertPos = infoDataStart + (infoSize === -1 ? 0 : infoSize);
+    const result = new Uint8Array(data.length + durBlock.length);
+    result.set(data.slice(0, insertPos), 0);
+    result.set(durBlock, insertPos);
+    result.set(data.slice(insertPos), insertPos + durBlock.length);
 
-    // Простой путь: вставляем Duration в конец Info (перед dataEnd)
-    // и обновляем размеры Info и Segment
-
-    function encodeVintSize(value) {
-      // Кодирует размер как VINT с минимально возможным числом байт
-      if (value < 0x7F) return new Uint8Array([0x80 | value]);
-      if (value < 0x3FFF) return new Uint8Array([0x40 | (value >> 8), value & 0xFF]);
-      if (value < 0x1FFFFF) return new Uint8Array([0x20 | (value >> 16), (value >> 8) & 0xFF, value & 0xFF]);
-      if (value < 0x0FFFFFFF) return new Uint8Array([0x10 | (value >> 24), (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF]);
-      // fallback на 5 байт
-      return new Uint8Array([0x08, (value >> 24) & 0xFF, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF]);
-    }
-
-    // Формируем новый Info: [InfoID][NewSize][OldData + DurationBlock]
-    // Проще: собрать всё заново: Segment start → Info start → Duration → Info end → Segment end
-
-    // Находим, где заканчиваются данные Info
-    const infoEnd = info.dataEnd;
-    const infoData = data.slice(info.dataStart, infoEnd);
-    const newInfoData = new Uint8Array(infoData.length + durBlock.length);
-    newInfoData.set(infoData, 0);
-    newInfoData.set(durBlock, infoData.length);
-
-    // Кодируем новый размер Info
-    const newInfoSize = encodeVintSize(newInfoData.length);
-    const newInfoBlock = new Uint8Array(info.idLen + newInfoSize.length + newInfoData.length);
-    newInfoBlock.set([0x15, 0x49, 0xA9, 0x66], 0); // Info ID
-    newInfoBlock.set(newInfoSize, info.idLen);
-    newInfoBlock.set(newInfoData, info.idLen + newInfoSize.length);
-
-    // Собираем финальный файл: всё до Info + новый Info + всё после Info
-    // Но! Нужно обновить размер Segment, он увеличился на (newInfoBlock.length - oldInfoBlock.length)
-    const oldInfoBlockLen = info.idLen + info.sizeLen + (info.size === -1 ? data.length - info.dataStart : info.size);
-    const delta = newInfoBlock.length - oldInfoBlockLen;
-
-    // Обновляем размер Segment
-    const newSegmentSize = segment.size === -1 ? -1 : (segment.size + delta);
-    let newSegmentSizeVint;
-    if (segment.size !== -1) {
-      newSegmentSizeVint = encodeVintSize(newSegmentSize);
-    } else {
-      newSegmentSizeVint = new Uint8Array([0xFF]); // Unknown size
-    }
-
-    // Собираем всё
-    const result = new Uint8Array(data.length + newInfoBlock.length - oldInfoBlockLen);
-    let off = 0;
-
-    // Всё до Segment Size
-    const segHeaderEnd = segment.pos + segment.idLen + segment.sizeLen;
-    result.set(data.slice(0, segHeaderEnd), off);
-    off += segHeaderEnd;
-
-    // Новый Segment Size
-    if (segment.size !== -1) {
-      // Перезаписываем старый Size новым (может быть другой длины!)
-      // Если длина Size не изменилась, просто копируем
-      const oldSegSizeLen = segment.sizeLen;
-      const newSegSizeLen = newSegmentSizeVint.length;
-      if (newSegSizeLen === oldSegSizeLen) {
-        result.set(newSegmentSizeVint, off);
-        off += newSegSizeLen;
-      } else {
-        // Разная длина — нужно пересобрать всё нафиг
-        // Проще: откатываемся и делаем полную пересборку с другим offset
-        // Для простоты — вернём как есть (такое редко бывает)
-        return blob;
-      }
-    } else {
-      result.set(newSegmentSizeVint, off);
-      off += 1;
-    }
-
-    // Копируем данные от начала Segment data до начала Info
-    const segDataStart = segment.pos + segment.idLen + segment.sizeLen;
-    const infoStart = info.pos;
-    result.set(data.slice(segDataStart, infoStart), off);
-    off += (infoStart - segDataStart);
-
-    // Вставляем новый Info
-    result.set(newInfoBlock, off);
-    off += newInfoBlock.length;
-
-    // Копируем всё после старого Info
-    result.set(data.slice(infoEnd), off);
-
-    return new Blob([result], { type: blob.type });
-  }).catch(err => {
+    return new Blob([result], { type: 'video/webm' });
+  } catch (err) {
     console.error('fixWebmDuration error:', err);
     return blob;
-  });
-     }
- 
+  }
+}
+
 // === САМООБНОВЛЕНИЕ SERVICE WORKER ===
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
