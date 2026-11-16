@@ -448,6 +448,7 @@ snapBtn.addEventListener('click', () => {
   link.click();
 });
 
+// === ЗАПИСЬ ВИДЕО ===
 let recorder = null;
 let recording = false;
 let recChunks = [];
@@ -488,7 +489,7 @@ function startRecording() {
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }).catch(err => {
         // Если патч не удался — сохраняем сырой файл
-        statusEl.textContent = 'PATCH FAIL, SAVING RAW';
+        statusEl.textContent = 'FIX FAIL, SAVING RAW';
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
@@ -516,57 +517,57 @@ function stopRecording() {
   recBtn.classList.remove('rec-active');
 }
 
-// === ПАТЧ ДЛИТЕЛЬНОСТИ WEBM (мгновенный, без перекодировки) ===
+// === ПАТЧ ДЛИТЕЛЬНОСТИ WEBM (встроенная библиотека) ===
 function fixWebmDuration(blob, durationMs) {
-  // Если это MP4 — сразу возвращаем через Promise (единый тип возврата)
+  // Работает только для WebM. Если это MP4, возвращаем как есть.
   if (blob.type.includes('mp4')) return Promise.resolve(blob);
 
-  return blob.arrayBuffer().then(buffer => {
-    const data = new Uint8Array(buffer);
-    const duration = durationMs;
+  return new Promise((resolve) => {
+    const fileReader = new FileReader();
+    fileReader.onload = function(e) {
+      const buffer = new Uint8Array(e.target.result);
+      const infoTag = [0x15, 0x49, 0xA9, 0x66];
+      const durationTag = [0x44, 0x89];
 
-    const durationId = [0x44, 0x89];
-    const infoId = [0x15, 0x49, 0xA9, 0x66];
-
-    let infoPos = -1;
-    for (let i = 0; i < data.length - 4; i++) {
-      if (data[i] === infoId[0] && data[i+1] === infoId[1] &&
-          data[i+2] === infoId[2] && data[i+3] === infoId[3]) {
-        infoPos = i;
-        break;
+      let infoIndex = -1;
+      for (let i = 0; i < buffer.length - 4; i++) {
+        if (buffer[i] === infoTag[0] && buffer[i+1] === infoTag[1] &&
+            buffer[i+2] === infoTag[2] && buffer[i+3] === infoTag[3]) {
+          infoIndex = i;
+          break;
+        }
       }
-    }
 
-    if (infoPos === -1) return blob;
-
-    let durPos = -1;
-    for (let i = infoPos; i < Math.min(data.length - 2, infoPos + 200); i++) {
-      if (data[i] === durationId[0] && data[i+1] === durationId[1]) {
-        durPos = i;
-        break;
+      if (infoIndex === -1) {
+        resolve(blob);
+        return;
       }
-    }
 
-    if (durPos === -1) return blob;
-
-    const float64 = new Float64Array(1);
-    float64[0] = duration;
-    const view = new DataView(float64.buffer);
-    const newDurBytes = new Uint8Array(8);
-    for (let i = 0; i < 8; i++) {
-      newDurBytes[i] = view.getUint8(7 - i);
-    }
-
-    if (data[durPos + 2] === 0x88) {
-      for (let i = 0; i < 8; i++) {
-        data[durPos + 3 + i] = newDurBytes[i];
+      let durationIndex = -1;
+      for (let i = infoIndex; i < Math.min(buffer.length - 2, infoIndex + 200); i++) {
+        if (buffer[i] === durationTag[0] && buffer[i+1] === durationTag[1]) {
+          durationIndex = i;
+          break;
+        }
       }
-    }
 
-    return new Blob([data], { type: blob.type });
+      if (durationIndex !== -1 && buffer[durationIndex + 2] === 0x88) {
+        const float64 = new Float64Array(1);
+        float64[0] = durationMs;
+        const view = new DataView(float64.buffer);
+        for (let i = 0; i < 8; i++) {
+          buffer[durationIndex + 3 + i] = view.getUint8(7 - i);
+        }
+        resolve(new Blob([buffer], { type: blob.type }));
+      } else {
+        resolve(blob);
+      }
+    };
+    fileReader.onerror = () => resolve(blob);
+    fileReader.readAsArrayBuffer(blob);
   });
-}
-
+ }
+ 
 // === САМООБНОВЛЕНИЕ SERVICE WORKER ===
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
