@@ -456,6 +456,7 @@ snapBtn.addEventListener('click', () => {
 let recorder = null;
 let recording = false;
 let recChunks = [];
+let recStartTime = 0;
 
 recBtn.addEventListener('click', () => {
   if (!recording) {
@@ -476,10 +477,13 @@ function startRecording() {
 
     recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2000000 });
     recChunks = [];
+    recStartTime = performance.now();
     recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
     recorder.onstop = () => {
       const blob = new Blob(recChunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
+      const durationMs = performance.now() - recStartTime;
+      const fixedBlob = fixWebmDuration(blob, durationMs);
+      const url = URL.createObjectURL(fixedBlob);
       const link = document.createElement('a');
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       link.download = `0.3MP_REC_${Date.now()}.${ext}`;
@@ -505,6 +509,65 @@ function stopRecording() {
   recBtn.classList.remove('rec-active');
 }
 
+// === ПАТЧ ДЛИТЕЛЬНОСТИ WEBM (мгновенный, без перекодировки) ===
+function fixWebmDuration(blob, durationMs) {
+  // Работает только для WebM. Если это MP4, возвращаем как есть.
+  if (blob.type.includes('mp4')) return blob;
+  
+  return blob.arrayBuffer().then(buffer => {
+    const data = new Uint8Array(buffer);
+    const duration = durationMs;
+    
+    // Ищем EBML ID 0x4489 (Duration) и 0x1549A966 (Info)
+    // Простой байтовый поиск
+    const durationId = [0x44, 0x89];
+    const infoId = [0x15, 0x49, 0xA9, 0x66];
+    
+    // Находим Segment > Info
+    let infoPos = -1;
+    for (let i = 0; i < data.length - 4; i++) {
+      if (data[i] === infoId[0] && data[i+1] === infoId[1] &&
+          data[i+2] === infoId[2] && data[i+3] === infoId[3]) {
+        infoPos = i;
+        break;
+      }
+    }
+    
+    if (infoPos === -1) return blob; // Не смогли найти Info, вернём как есть
+    
+    // Ищем Duration внутри Info
+    let durPos = -1;
+    for (let i = infoPos; i < Math.min(data.length - 2, infoPos + 200); i++) {
+      if (data[i] === durationId[0] && data[i+1] === durationId[1]) {
+        durPos = i;
+        break;
+      }
+    }
+    
+    if (durPos === -1) return blob;
+    
+    // Duration — это float64, идёт сразу после ID
+    // Пишем его как 8-байтовый float (big-endian)
+    const float64 = new Float64Array(1);
+    float64[0] = duration;
+    const view = new DataView(float64.buffer);
+    const newDurBytes = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) {
+      newDurBytes[i] = view.getUint8(7 - i); // big-endian
+    }
+    
+    // Проверяем, что место есть (в VINT кодировании размер Duration = 0x88 = 8 байт)
+    if (data[durPos + 2] === 0x88) {
+      // Есть место под float64, пишем
+      for (let i = 0; i < 8; i++) {
+        data[durPos + 3 + i] = newDurBytes[i];
+      }
+    }
+    
+    return new Blob([data], { type: blob.type });
+  });
+}
+ 
 // === САМООБНОВЛЕНИЕ SERVICE WORKER ===
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
