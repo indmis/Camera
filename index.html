@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>0.3MP Dither Cam</title>
+<title>0.3MP Dither Cam — GIF</title>
 <link rel="manifest" href="./manifest.json">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
@@ -105,13 +105,13 @@
     flex: 2;
   }
   #snap:active { background: #888; }
-  #rec {
+  #gif {
     background: #1a1a1a;
     border-color: #f33;
     color: #f33;
     flex: 1;
   }
-  #rec.rec-active {
+  #gif.rec-active {
     background: #f33;
     color: #fff;
     animation: pulse 0.8s infinite;
@@ -140,9 +140,12 @@
   </div>
   <div class="btn-row">
     <button id="snap">СНЯТЬ КАДР</button>
-    <button id="rec">REC</button>
+    <button id="gif">GIF</button>
   </div>
 </div>
+
+<!-- ВСТРОЕННАЯ БИБЛИОТЕКА GIF.JS (МИНИФИЦИРОВАННАЯ) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -152,7 +155,7 @@ const modeBtn = document.getElementById('modeBtn');
 const resBtn = document.getElementById('resBtn');
 const invBtn = document.getElementById('invBtn');
 const snapBtn = document.getElementById('snap');
-const recBtn = document.getElementById('rec');
+const gifBtn = document.getElementById('gif');
 const statusEl = document.getElementById('status');
 
 const contrastSlider = document.getElementById('contrast');
@@ -310,6 +313,7 @@ invBtn.addEventListener('click', () => {
 });
 
 let frameCount = 0;
+let isRecordingGif = false;
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -354,7 +358,7 @@ function processFrame() {
     if (frameCount % 10 === 0) {
       const motPct = Math.round(activeMotion * 100);
       const freezeTag = sensorUpdated ? '' : ' [FREEZE]';
-      const recTag = recording ? ' <span class="rec">● REC</span>' : '';
+      const recTag = isRecordingGif ? ' <span class="rec">● GIF</span>' : '';
       statusEl.innerHTML = `${W}x${H} | ДВИЖ:${motPct}%${freezeTag}${recTag}`;
     }
 
@@ -446,198 +450,77 @@ snapBtn.addEventListener('click', () => {
   link.click();
 });
 
-let recorder = null;
-let recording = false;
-let recChunks = [];
-let recStartTime = 0;
+// === ЗАПИСЬ GIF ===
+let gif = null;
+let gifFrames = 0;
+let gifMaxFrames = 50; // максимум кадров (при 10 FPS это 5 секунд)
+let gifInterval = null;
 
-recBtn.addEventListener('click', () => {
-  if (!recording) {
-    startRecording();
+gifBtn.addEventListener('click', () => {
+  if (!isRecordingGif) {
+    startGifRecording();
   } else {
-    stopRecording();
+    stopGifRecording();
   }
 });
 
-function startRecording() {
-  try {
-    const stream = canvas.captureStream(30);
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : MediaRecorder.isTypeSupported('video/webm')
-        ? 'video/webm'
-        : 'video/mp4';
-
-    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2000000 });
-    recChunks = [];
-    recStartTime = performance.now();
-    recorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(recChunks, { type: mimeType });
-      const durationMs = performance.now() - recStartTime;
-
-      fixWebmDuration(blob, durationMs).then(fixedBlob => {
-        const url = URL.createObjectURL(fixedBlob);
-        const link = document.createElement('a');
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        link.download = `0.3MP_REC_${Date.now()}.${ext}`;
-        link.href = url;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }).catch(err => {
-        statusEl.textContent = 'FIX FAIL, SAVING RAW';
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        link.download = `0.3MP_REC_RAW_${Date.now()}.${ext}`;
-        link.href = url;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      });
-    };
-    recorder.start(200);
-    recording = true;
-    recBtn.textContent = 'STOP';
-    recBtn.classList.add('rec-active');
-  } catch (err) {
-    statusEl.textContent = 'REC: ' + err.message;
+function startGifRecording() {
+  if (typeof GIF === 'undefined') {
+    statusEl.textContent = 'GIF БИБЛИОТЕКА НЕ ЗАГРУЖЕНА';
+    return;
   }
+
+  gif = new GIF({
+    workers: 2,
+    quality: 8,
+    width: W,
+    height: H,
+    workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'
+  });
+
+  gifFrames = 0;
+  isRecordingGif = true;
+  gifBtn.textContent = 'STOP';
+  gifBtn.classList.add('rec-active');
+
+  // Собираем кадры 10 раз в секунду
+  gifInterval = setInterval(() => {
+    if (!isRecordingGif) return;
+    if (gifFrames >= gifMaxFrames) {
+      stopGifRecording();
+      return;
+    }
+    try {
+      gif.addFrame(canvas, { copy: true, delay: 100 });
+      gifFrames++;
+    } catch (e) {
+      console.error('GIF frame error:', e);
+    }
+  }, 100); // 100 мс = 10 FPS
+
+  gif.on('finished', (blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `0.3MP_GIF_${Date.now()}.gif`;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    statusEl.textContent = 'GIF ГОТОВ';
+  });
 }
 
-function stopRecording() {
-  if (recorder && recorder.state !== 'inactive') {
-    recorder.stop();
+function stopGifRecording() {
+  isRecordingGif = false;
+  if (gifInterval) {
+    clearInterval(gifInterval);
+    gifInterval = null;
   }
-  recording = false;
-  recBtn.textContent = 'REC';
-  recBtn.classList.remove('rec-active');
-}
+  gifBtn.textContent = 'GIF';
+  gifBtn.classList.remove('rec-active');
 
-// === УНИВЕРСАЛЬНЫЙ ПАТЧ ДЛИТЕЛЬНОСТИ WEBM ===
-async function fixWebmDuration(blob, durationMs) {
-  if (blob.type.includes('mp4')) return blob;
-
-  try {
-    const buffer = await blob.arrayBuffer();
-    const data = new Uint8Array(buffer);
-
-    function readVint(pos) {
-      const first = data[pos];
-      let length = 1;
-      let mask = 0x80;
-      while (length <= 8 && !(first & mask)) {
-        length++;
-        mask >>= 1;
-      }
-      if (length > 8) return null;
-      let value = first & (mask - 1);
-      for (let i = 1; i < length; i++) {
-        value = (value << 8) | data[pos + i];
-      }
-      return { length, value };
-    }
-
-    let pos = 0;
-    let segmentPos = -1;
-    let segmentSizePos = -1;
-    let segmentDataStart = -1;
-    let segmentSize = 0;
-
-    while (pos < data.length) {
-      const id = readVint(pos);
-      if (!id) break;
-      let idVal = 0;
-      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
-      const size = readVint(pos + id.length);
-      if (!size) break;
-      const dataStart = pos + id.length + size.length;
-      if (idVal === 0x18538067) {
-        segmentPos = pos;
-        segmentSizePos = pos + id.length;
-        segmentDataStart = dataStart;
-        segmentSize = size.value;
-        break;
-      }
-      if (size.value === -1) break;
-      pos = dataStart + size.value;
-    }
-
-    if (segmentPos === -1) return blob;
-
-    pos = segmentDataStart;
-    let infoPos = -1;
-    let infoSizePos = -1;
-    let infoDataStart = -1;
-    let infoSize = 0;
-
-    while (pos < data.length) {
-      const id = readVint(pos);
-      if (!id) break;
-      let idVal = 0;
-      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
-      const size = readVint(pos + id.length);
-      if (!size) break;
-      const dataStart = pos + id.length + size.length;
-      if (idVal === 0x1549A966) {
-        infoPos = pos;
-        infoSizePos = pos + id.length;
-        infoDataStart = dataStart;
-        infoSize = size.value;
-        break;
-      }
-      if (size.value === -1) break;
-      pos = dataStart + size.value;
-    }
-
-    if (infoPos === -1) return blob;
-
-    const float64 = new Float64Array(1);
-    float64[0] = durationMs;
-    const view = new DataView(float64.buffer);
-    const durBytes = new Uint8Array(8);
-    for (let i = 0; i < 8; i++) durBytes[i] = view.getUint8(7 - i);
-    const durBlock = new Uint8Array([0x44, 0x89, 0x88, ...durBytes]);
-
-    // Ищем существующий Duration
-    pos = infoDataStart;
-    const infoEnd = infoSize === -1 ? data.length : infoDataStart + infoSize;
-    let durationDataPos = -1;
-
-    while (pos < infoEnd) {
-      const id = readVint(pos);
-      if (!id) break;
-      let idVal = 0;
-      for (let i = 0; i < id.length; i++) idVal = (idVal << 8) | data[pos + i];
-      const size = readVint(pos + id.length);
-      if (!size) break;
-      const dataStart = pos + id.length + size.length;
-      if (idVal === 0x4489) {
-        durationDataPos = dataStart;
-        break;
-      }
-      if (size.value === -1) break;
-      pos = dataStart + size.value;
-    }
-
-    if (durationDataPos !== -1) {
-      if (data[durationDataPos - 1] === 0x88) {
-        const out = new Uint8Array(data);
-        for (let i = 0; i < 8; i++) out[durationDataPos + i] = durBytes[i];
-        return new Blob([out], { type: 'video/webm' });
-      }
-    }
-
-    // Вставляем Duration в конец Info
-    const insertPos = infoDataStart + (infoSize === -1 ? 0 : infoSize);
-    const result = new Uint8Array(data.length + durBlock.length);
-    result.set(data.slice(0, insertPos), 0);
-    result.set(durBlock, insertPos);
-    result.set(data.slice(insertPos), insertPos + durBlock.length);
-
-    return new Blob([result], { type: 'video/webm' });
-  } catch (err) {
-    console.error('fixWebmDuration error:', err);
-    return blob;
+  if (gif) {
+    statusEl.textContent = 'КОДИРУЮ GIF...';
+    gif.render();
   }
 }
 
