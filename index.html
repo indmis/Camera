@@ -203,13 +203,12 @@ function initSensorBuffers() {
   fpnMap = new Float32Array(size);
   cachedDynamicNoise = new Float32Array(size);
 
-  // Убраны вертикальные полосы (colNoise). Шум полностью случайный.
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
       let n = (Math.random() - 0.5) * 6;
       const rnd = Math.random();
-      if (rnd > 0.9985) n += 110; // Горячие пиксели
+      if (rnd > 0.9985) n += 110;
       else if (rnd < 0.0015) n -= 110;
       fpnMap[idx] = n;
     }
@@ -233,16 +232,13 @@ function handleMotion(e) {
   const instant = Math.min(1, delta / 4.5);
   motionIntensity = Math.max(instant, motionIntensity * 0.85);
 
-  // Накопление смещения «звёздного неба»
   starOffsetX -= dx * STAR_PARALLAX * 0.1;
   starOffsetY += dy * STAR_PARALLAX * 0.1;
 
-  // Мягкое затухание, чтобы точки возвращались, если телефон стоит
   starOffsetX *= 0.995;
   starOffsetY *= 0.995;
 }
 
-// Запрос разрешения на iOS и включение гироскопа
 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
   document.body.addEventListener('click', async () => {
     try {
@@ -254,16 +250,46 @@ if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.request
   window.addEventListener('devicemotion', handleMotion);
 }
 
-navigator.mediaDevices.getUserMedia({
-  video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-  audio: false
-}).then(stream => {
-  video.srcObject = stream;
-  video.play();
-  requestAnimationFrame(processFrame);
-}).catch(err => {
-  statusEl.textContent = 'ОШИБКА: ' + err.message;
+// === ЗАПУСК И ВОССТАНОВЛЕНИЕ КАМЕРЫ ===
+let currentStream = null;
+
+async function startCamera() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+  }
+  try {
+    currentStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+    video.srcObject = currentStream;
+    await video.play();
+    // Принудительно запускаем цикл, если он еще не был запущен
+    if (!frameLoopActive) {
+      frameLoopActive = true;
+      requestAnimationFrame(processFrame);
+    }
+  } catch (err) {
+    statusEl.textContent = 'ОШИБКА: ' + err.message;
+  }
+}
+
+let frameLoopActive = false;
+
+// Слушатель видимости: когда приложение сворачивают или блокируют
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    // При возврате проверяем, живо ли видео
+    if (!video.srcObject || video.paused || video.readyState < 2) {
+      startCamera();
+    } else {
+      // Если видео есть, но замерзло, просто "пинаем" его
+      video.play().catch(() => startCamera());
+    }
+  }
 });
+
+startCamera();
 
 contrastSlider.addEventListener('input', () => {
   contrast = contrastSlider.value / 100;
@@ -357,7 +383,6 @@ function processFrame() {
         const i = p * 4;
         const p3 = p * 3;
 
-        // Смещение выборки шума по гироскопу
         let sampleX = x + Math.round(starOffsetX);
         let sampleY = y + Math.round(starOffsetY);
         sampleX = ((sampleX % W) + W) % W;
@@ -480,8 +505,23 @@ function stopRecording() {
   recBtn.classList.remove('rec-active');
 }
 
+// === САМООБНОВЛЕНИЕ SERVICE WORKER ===
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js');
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // Принудительно проверяем обновления при запуске
+    reg.update();
+    
+    // Если нашли новый воркер, перезагружаем страницу
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // Новый воркер активирован, можно перезагрузить страницу
+          window.location.reload();
+        }
+      });
+    });
+  });
 }
 </script>
 
