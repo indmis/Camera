@@ -191,7 +191,7 @@ let motionIntensity = 0;
 // Смещение «звёздного неба» от гироскопа
 let starOffsetX = 0;
 let starOffsetY = 0;
-const STAR_PARALLAX = 6; 
+const STAR_PARALLAX = 6;
 
 const bayer = new Uint8Array(16);
 const bayerSrc = "0,128,32,160,192,64,224,96,48,176,16,144,240,112,208,80".split(",");
@@ -252,6 +252,7 @@ if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.request
 
 // === ЗАПУСК И ВОССТАНОВЛЕНИЕ КАМЕРЫ ===
 let currentStream = null;
+let frameLoopActive = false;
 
 async function startCamera() {
   if (currentStream) {
@@ -264,7 +265,6 @@ async function startCamera() {
     });
     video.srcObject = currentStream;
     await video.play();
-    // Принудительно запускаем цикл, если он еще не был запущен
     if (!frameLoopActive) {
       frameLoopActive = true;
       requestAnimationFrame(processFrame);
@@ -274,16 +274,11 @@ async function startCamera() {
   }
 }
 
-let frameLoopActive = false;
-
-// Слушатель видимости: когда приложение сворачивают или блокируют
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    // При возврате проверяем, живо ли видео
     if (!video.srcObject || video.paused || video.readyState < 2) {
       startCamera();
     } else {
-      // Если видео есть, но замерзло, просто "пинаем" его
       video.play().catch(() => startCamera());
     }
   }
@@ -482,14 +477,26 @@ function startRecording() {
     recorder.onstop = () => {
       const blob = new Blob(recChunks, { type: mimeType });
       const durationMs = performance.now() - recStartTime;
-      const fixedBlob = fixWebmDuration(blob, durationMs);
-      const url = URL.createObjectURL(fixedBlob);
-      const link = document.createElement('a');
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      link.download = `0.3MP_REC_${Date.now()}.${ext}`;
-      link.href = url;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      fixWebmDuration(blob, durationMs).then(fixedBlob => {
+        const url = URL.createObjectURL(fixedBlob);
+        const link = document.createElement('a');
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        link.download = `0.3MP_REC_${Date.now()}.${ext}`;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }).catch(err => {
+        // Если патч не удался — сохраняем сырой файл
+        statusEl.textContent = 'PATCH FAIL, SAVING RAW';
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        link.download = `0.3MP_REC_RAW_${Date.now()}.${ext}`;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      });
     };
     recorder.start(200);
     recording = true;
@@ -511,19 +518,16 @@ function stopRecording() {
 
 // === ПАТЧ ДЛИТЕЛЬНОСТИ WEBM (мгновенный, без перекодировки) ===
 function fixWebmDuration(blob, durationMs) {
-  // Работает только для WebM. Если это MP4, возвращаем как есть.
-  if (blob.type.includes('mp4')) return blob;
-  
+  // Если это MP4 — сразу возвращаем через Promise (единый тип возврата)
+  if (blob.type.includes('mp4')) return Promise.resolve(blob);
+
   return blob.arrayBuffer().then(buffer => {
     const data = new Uint8Array(buffer);
     const duration = durationMs;
-    
-    // Ищем EBML ID 0x4489 (Duration) и 0x1549A966 (Info)
-    // Простой байтовый поиск
+
     const durationId = [0x44, 0x89];
     const infoId = [0x15, 0x49, 0xA9, 0x66];
-    
-    // Находим Segment > Info
+
     let infoPos = -1;
     for (let i = 0; i < data.length - 4; i++) {
       if (data[i] === infoId[0] && data[i+1] === infoId[1] &&
@@ -532,10 +536,9 @@ function fixWebmDuration(blob, durationMs) {
         break;
       }
     }
-    
-    if (infoPos === -1) return blob; // Не смогли найти Info, вернём как есть
-    
-    // Ищем Duration внутри Info
+
+    if (infoPos === -1) return blob;
+
     let durPos = -1;
     for (let i = infoPos; i < Math.min(data.length - 2, infoPos + 200); i++) {
       if (data[i] === durationId[0] && data[i+1] === durationId[1]) {
@@ -543,43 +546,35 @@ function fixWebmDuration(blob, durationMs) {
         break;
       }
     }
-    
+
     if (durPos === -1) return blob;
-    
-    // Duration — это float64, идёт сразу после ID
-    // Пишем его как 8-байтовый float (big-endian)
+
     const float64 = new Float64Array(1);
     float64[0] = duration;
     const view = new DataView(float64.buffer);
     const newDurBytes = new Uint8Array(8);
     for (let i = 0; i < 8; i++) {
-      newDurBytes[i] = view.getUint8(7 - i); // big-endian
+      newDurBytes[i] = view.getUint8(7 - i);
     }
-    
-    // Проверяем, что место есть (в VINT кодировании размер Duration = 0x88 = 8 байт)
+
     if (data[durPos + 2] === 0x88) {
-      // Есть место под float64, пишем
       for (let i = 0; i < 8; i++) {
         data[durPos + 3 + i] = newDurBytes[i];
       }
     }
-    
+
     return new Blob([data], { type: blob.type });
   });
 }
- 
+
 // === САМООБНОВЛЕНИЕ SERVICE WORKER ===
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
-    // Принудительно проверяем обновления при запуске
     reg.update();
-    
-    // Если нашли новый воркер, перезагружаем страницу
     reg.addEventListener('updatefound', () => {
       const newWorker = reg.installing;
       newWorker.addEventListener('statechange', () => {
         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          // Новый воркер активирован, можно перезагрузить страницу
           window.location.reload();
         }
       });
