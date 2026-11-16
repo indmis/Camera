@@ -3,6 +3,7 @@ const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './gif.worker.js', // <-- добавили
   './icon-192.png',
   './icon-512.png'
 ];
