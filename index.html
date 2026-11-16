@@ -471,12 +471,12 @@ function startGifRecording() {
   }
 
   gif = new GIF({
-    workers: 2,
-    quality: 8,
-    width: W,
-    height: H,
-    workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'
-  });
+  workers: 2,
+  quality: 8,
+  width: W,
+  height: H,
+  workerScript: './gif.worker.js' // <-- локальный файл
+});
 
   gifFrames = 0;
   isRecordingGif = true;
@@ -507,6 +507,9 @@ function startGifRecording() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     statusEl.textContent = 'GIF ГОТОВ';
   });
+  gif.on('abort', () => {
+  statusEl.textContent = 'GIF ОТМЕНЁН';
+  });
 }
 
 function stopGifRecording() {
@@ -521,6 +524,12 @@ function stopGifRecording() {
   if (gif) {
     statusEl.textContent = 'КОДИРУЮ GIF...';
     gif.render();
+  }
+
+  if (gif.frames && gif.frames.length === 0) {
+  statusEl.textContent = 'НЕТ КАДРОВ ДЛЯ GIF';
+  gif = null;
+  return;
   }
 }
 
