@@ -535,26 +535,65 @@ function processFrame() {
           r *= vignette; g *= vignette; b *= vignette;
         }
 
-        // === РЕЖИМ 6: RECEIPT (чек) ===
-        else if (mode === 6) {
-          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          lum = (lum - 128) * contrast + 128;
-          const noise = (Math.random() - 0.5) * 80;
-          const paperVal = lum + noise > 128 ? 255 : 0;
-
-          if (paperVal > 128) {
-            r = 255; g = 250; b = 220;
-          } else {
-            r = 30; g = 30; b = 30;
-          }
-
-          if (Math.random() < 0.01) {
-            r = 255; g = 250; b = 220;
-          }
-          if (Math.random() < 0.002) {
-            r *= 0.7; g *= 0.7; b *= 0.7;
-          }
-        }
+// === РЕЖИМ 6: RECEIPT (чек, термопечать) ===
+else if (mode === 6) {
+  // Исходная яркость
+  let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  
+  // Лёгкий контраст (но не жёсткий)
+  lum = (lum - 128) * (contrast * 0.7) + 128;
+  
+  // Неравномерность прогрева головки: вертикальные полосы
+  const heatWave = Math.sin(x * 0.15) * 8 + Math.sin(x * 0.4) * 4;
+  lum += heatWave;
+  
+  // Шум бумаги (зернистость)
+  const grain = (Math.random() - 0.5) * 25;
+  lum += grain;
+  
+  // Ограничиваем
+  lum = Math.max(0, Math.min(255, lum));
+  
+  // === ГРАДАЦИИ СЕРОГО (термопечать) ===
+  // Вместо бинарного чёрное/белое — несколько уровней
+  // Чем темнее пиксель, тем темнее «краска»
+  // Но бумага сама по себе серая (не белая)
+  
+  // Базовый цвет бумаги (тёплый серо-бежевый)
+  const paperR = 216, paperG = 212, paperB = 200;
+  // Цвет «краски» (тёмно-серый, не чёрный)
+  const inkR = 45, inkG = 42, inkB = 38;
+  
+  // Нормализуем яркость в 0..1 (0 = тёмная краска, 1 = чистая бумага)
+  const t = lum / 255;
+  
+  // Плавное смешивание: чем темнее пиксель, тем больше «краски»
+  // Используем нелинейную кривую для градаций (как у термопечати)
+  const inkAmount = Math.pow(1 - t, 1.5); // 0..1
+  
+  // Смешиваем бумагу и краску
+  r = paperR * (1 - inkAmount) + inkR * inkAmount;
+  g = paperG * (1 - inkAmount) + inkG * inkAmount;
+  b = paperB * (1 - inkAmount) + inkB * inkAmount;
+  
+  // === СЛУЧАЙНЫЕ ПРОПУСКИ СТРОК (как будто принтер пропустил) ===
+  if (Math.random() < 0.008) {
+    r = paperR; g = paperG; b = paperB;
+  }
+  
+  // === ВЕРТИКАЛЬНЫЕ АРТЕФАКТЫ (замятие бумаги) ===
+  if (Math.random() < 0.002) {
+    r *= 0.75; g *= 0.75; b *= 0.75;
+  }
+  
+  // === ЛЁГКАЯ ВИНЬЕТКА (как будто чек сфоткан) ===
+  const cx = W / 2, cy = H / 2;
+  const dx = (x - cx) / cx;
+  const dy = (y - cy) / cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const vignette = Math.max(0.75, 1 - dist * 0.3);
+  r *= vignette; g *= vignette; b *= vignette;
+}
 
         if (invert) {
           r = 255 - r;
