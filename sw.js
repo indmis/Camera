@@ -1,4 +1,4 @@
-const CACHE_NAME = 'camTRAPv676.67';
+const CACHE_NAME = 'camTRAPv676.679';
 const ASSETS = [
   './',
   './index.html',
