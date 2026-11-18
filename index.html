@@ -161,6 +161,7 @@
 <!-- ВСТРОЕННАЯ БИБЛИОТЕКА GIF.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
+
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -220,6 +221,27 @@ let starOffsetX = 0;
 let starOffsetY = 0;
 const STAR_PARALLAX = 6;
 
+// === РАНДОМНЫЙ ПАТТЕРН СКАН-ЛИНИЙ ДЛЯ CRT ===
+let crtScanPattern = [];
+let crtScanlineOffset = 0;
+
+function generateCrtPattern() {
+  crtScanPattern = [];
+  let y = 0;
+  while (y < H) {
+    // Случайная длина «светлой» полосы (1-5 пикселей)
+    const lightLen = 1 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < lightLen && y < H; i++, y++) {
+      crtScanPattern.push(1); // 1 = обычная яркость
+    }
+    // Случайная длина «тёмной» полосы (1-5 пикселей)
+    const darkLen = 1 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < darkLen && y < H; i++, y++) {
+      crtScanPattern.push(0); // 0 = тёмная скан-линия
+    }
+  }
+}
+
 const bayer = new Uint8Array(16);
 const bayerSrc = "0,128,32,160,192,64,224,96,48,176,16,144,240,112,208,80".split(",");
 for (let i = 0; i < 16; i++) bayer[i] = parseInt(bayerSrc[i], 10);
@@ -243,6 +265,7 @@ function initSensorBuffers() {
 
   starOffsetX = 0;
   starOffsetY = 0;
+  generateCrtPattern(); // Новый паттерн при смене разрешения
 }
 
 initSensorBuffers();
@@ -354,6 +377,10 @@ contrastSlider.addEventListener('input', () => {
 modeBtn.addEventListener('click', () => {
   mode = (mode + 1) % modes.length;
   modeBtn.textContent = modes[mode];
+  // При переключении на CRT — новый паттерн
+  if (mode === 5) {
+    generateCrtPattern();
+  }
 });
 
 resBtn.addEventListener('click', () => {
@@ -373,7 +400,6 @@ invBtn.addEventListener('click', () => {
 
 let frameCount = 0;
 let isRecordingGif = false;
-let crtScanlineOffset = 0;
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -445,12 +471,15 @@ function processFrame() {
       prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
     }
 
-    // Для CRT: смещение скан-линий и бегущая полоса
+    // Смещение паттерна (для анимации)
     crtScanlineOffset = (crtScanlineOffset + 1) % 6;
-    const rollingBarY = (frameCount * 2) % H;
 
     for (let y = 0; y < H; y++) {
       const rowOffset = (y & 3) << 2;
+      // Индекс в паттерне с учётом смещения
+      const patternIdx = (y + crtScanlineOffset) % crtScanPattern.length;
+      const isDarkScanline = crtScanPattern[patternIdx] === 0;
+
       for (let x = 0; x < W; x++) {
         const p = y * W + x;
         const i = p * 4;
@@ -500,23 +529,15 @@ function processFrame() {
           }
         }
 
-        // === РЕЖИМ 5: CRT (жёсткий) ===
+        // === РЕЖИМ 5: CRT ===
         else if (mode === 5) {
-          // Контраст + шум
           r = (r - 128) * contrast + 128 + totalNoise;
           g = (g - 128) * contrast + 128 + totalNoise;
           b = (b - 128) * contrast + 128 + totalNoise;
 
-          // Скан-линии: каждый 2-й ряд темнее (жёстко)
-          if ((y + crtScanlineOffset) % 2 === 0) {
+          // Рандомная скан-линия (тёмная = 0)
+          if (isDarkScanline) {
             r *= 0.3; g *= 0.3; b *= 0.3;
-          }
-
-          // Бегущая полоса (как помеха на старом ТВ)
-          if (Math.abs(y - rollingBarY) < 8) {
-            r = Math.min(255, r * 1.4);
-            g = Math.min(255, g * 1.4);
-            b = Math.min(255, b * 1.4);
           }
 
           // Мерцание всего кадра
@@ -530,11 +551,11 @@ function processFrame() {
             b = Math.min(255, b * 1.15);
           }
 
-          // Зелёный люминофор: гасим красный и синий
+          // Зелёный люминофор
           r *= 0.7;
           b *= 0.7;
 
-          // Виньетка (по краям темнее)
+          // Виньетка
           const cx = W / 2, cy = H / 2;
           const dx = (x - cx) / cx;
           const dy = (y - cy) / cy;
