@@ -1,4 +1,4 @@
-const CACHE_NAME = 'xamReceio666777';
+const CACHE_NAME = 'camCAM67CTR';
 const ASSETS = [
   './',
   './index.html',
