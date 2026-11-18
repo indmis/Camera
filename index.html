@@ -496,44 +496,32 @@ function processFrame() {
         if (mode === 5) {
           // CRT
           if (y % 3 === 0) {
-            r *= 0.6; g *= 0.6; b *= 0.6;
+            r *= 0.5; g *= 0.5; b *= 0.5;
           }
-          const flicker = 0.95 + Math.random() * 0.1;
+          const flicker = 0.92 + Math.random() * 0.16;
           r *= flicker; g *= flicker; b *= flicker;
-
-          const shiftX = 1;
-          const rX = Math.min(W - 1, x + shiftX);
-          const bX = Math.max(0, x - shiftX);
-          const rSrc = (y * W + rX) * 4;
-          const bSrc = (y * W + bX) * 4;
-          r = data[rSrc] * 0.8 + r * 0.2;
-          b = data[bSrc + 2] * 0.8 + b * 0.2;
-
-          if (r > 200 && g > 200 && b > 200) {
-            r = 255; g = 255; b = 255;
+          if (r > 180 && g > 180 && b > 180) {
+            r = Math.min(255, r * 1.1);
+            g = Math.min(255, g * 1.1);
+            b = Math.min(255, b * 1.1);
           }
         } else if (mode === 6) {
           // RECEIPT (чек)
           const lum2 = 0.299 * r + 0.587 * g + 0.114 * b;
-          const noise = (Math.random() - 0.5) * 40;
-          const paperThreshold = 128 + noise;
-          let paperVal = lum2 > paperThreshold ? 255 : 0;
+          const noise = (Math.random() - 0.5) * 60;
+          const paperVal = lum2 + noise > 128 ? 255 : 0;
           
-          if (!invert) {
-            if (paperVal > 128) {
-              r = 255; g = 255; b = 240; // Желтоватая бумага
-            } else {
-              r = 40; g = 40; b = 40; // Тёмный текст
-            }
+          if (paperVal > 128) {
+            r = 250; g = 248; b = 230; // Желтоватая бумага
           } else {
-            r = g = b = paperVal;
+            r = 30; g = 30; b = 30; // Тёмный текст
           }
           
-          if (Math.random() < 0.02) {
-            r = g = b = 255; // Пропуск строки
+          if (Math.random() < 0.015) {
+            r = 250; g = 248; b = 230; // Пропуск строки
           }
-          if (Math.random() < 0.005) {
-            r *= 0.5; g *= 0.5; b *= 0.5; // Артефакт
+          if (Math.random() < 0.003) {
+            r *= 0.6; g *= 0.6; b *= 0.6; // Артефакт
           }
         }
         // ====================
