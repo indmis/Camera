@@ -161,7 +161,6 @@
 <!-- ВСТРОЕННАЯ БИБЛИОТЕКА GIF.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
-
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -374,6 +373,7 @@ invBtn.addEventListener('click', () => {
 
 let frameCount = 0;
 let isRecordingGif = false;
+let crtScanlineOffset = 0;
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -445,6 +445,10 @@ function processFrame() {
       prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
     }
 
+    // Для CRT: смещение скан-линий и бегущая полоса
+    crtScanlineOffset = (crtScanlineOffset + 1) % 6;
+    const rollingBarY = (frameCount * 2) % H;
+
     for (let y = 0; y < H; y++) {
       const rowOffset = (y & 3) << 2;
       for (let x = 0; x < W; x++) {
@@ -496,27 +500,47 @@ function processFrame() {
           }
         }
 
-        // === РЕЖИМ 5: CRT ===
+        // === РЕЖИМ 5: CRT (жёсткий) ===
         else if (mode === 5) {
+          // Контраст + шум
           r = (r - 128) * contrast + 128 + totalNoise;
           g = (g - 128) * contrast + 128 + totalNoise;
           b = (b - 128) * contrast + 128 + totalNoise;
 
-          if (y % 3 === 0) {
-            r *= 0.5; g *= 0.5; b *= 0.5;
+          // Скан-линии: каждый 2-й ряд темнее (жёстко)
+          if ((y + crtScanlineOffset) % 2 === 0) {
+            r *= 0.3; g *= 0.3; b *= 0.3;
           }
 
-          const flicker = 0.92 + Math.random() * 0.16;
+          // Бегущая полоса (как помеха на старом ТВ)
+          if (Math.abs(y - rollingBarY) < 8) {
+            r = Math.min(255, r * 1.4);
+            g = Math.min(255, g * 1.4);
+            b = Math.min(255, b * 1.4);
+          }
+
+          // Мерцание всего кадра
+          const flicker = 0.85 + Math.random() * 0.25;
           r *= flicker; g *= flicker; b *= flicker;
 
-          if (r > 200 && g > 200 && b > 200) {
-            r = Math.min(255, r * 1.05);
-            g = Math.min(255, g * 1.05);
-            b = Math.min(255, b * 1.05);
+          // Свечение (bloom) для ярких пикселей
+          if (r > 180 && g > 180 && b > 180) {
+            r = Math.min(255, r * 1.15);
+            g = Math.min(255, g * 1.15);
+            b = Math.min(255, b * 1.15);
           }
 
-          r *= 0.85;
-          b *= 0.85;
+          // Зелёный люминофор: гасим красный и синий
+          r *= 0.7;
+          b *= 0.7;
+
+          // Виньетка (по краям темнее)
+          const cx = W / 2, cy = H / 2;
+          const dx = (x - cx) / cx;
+          const dy = (y - cy) / cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const vignette = Math.max(0, 1 - dist * 0.8);
+          r *= vignette; g *= vignette; b *= vignette;
         }
 
         // === РЕЖИМ 6: RECEIPT (чек) ===
