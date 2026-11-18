@@ -1,4 +1,4 @@
-const CACHE_NAME = 'efffffzz7';
+const CACHE_NAME = 'xamReceio67';
 const ASSETS = [
   './',
   './index.html',
