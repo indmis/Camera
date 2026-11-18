@@ -161,6 +161,7 @@
 <!-- ВСТРОЕННАЯ БИБЛИОТЕКА GIF.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
+
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -463,74 +464,92 @@ function processFrame() {
         let g = prevRaw[p3 + 1];
         let b = prevRaw[p3 + 2];
 
-        if (mode === 3) {
-          const shift = 1 + Math.round(activeMotion * 4);
-          const rP = (y * W + Math.min(W - 1, x + shift)) * 3;
-          const bP = (y * W + Math.max(0, x - shift)) * 3;
+        // === РЕЖИМЫ 0-4 (дизеринг) ===
+        if (mode <= 4) {
+          if (mode === 3) {
+            const shift = 1 + Math.round(activeMotion * 4);
+            const rP = (y * W + Math.min(W - 1, x + shift)) * 3;
+            const bP = (y * W + Math.max(0, x - shift)) * 3;
 
-          r = ((prevRaw[rP] - 128) * contrast + 128) + totalNoise;
-          g = ((g - 128) * contrast + 128) + totalNoise;
-          b = ((prevRaw[bP + 2] - 128) * contrast + 128) + totalNoise;
+            r = ((prevRaw[rP] - 128) * contrast + 128) + totalNoise;
+            g = ((g - 128) * contrast + 128) + totalNoise;
+            b = ((prevRaw[bP + 2] - 128) * contrast + 128) + totalNoise;
 
-          r = r > 128 ? 255 : (r > 64 ? 128 : 0);
-          g = g > 128 ? 255 : (g > 64 ? 128 : 0);
-          b = b > 128 ? 255 : (b > 64 ? 128 : 0);
-        } else {
-          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          lum = (lum - 128) * contrast + 128 + totalNoise;
-          let val = 0;
-          if (mode === 0) {
-            const threshold = bayer[rowOffset + (x & 3)];
-            val = lum > threshold ? 255 : 0;
-          } else if (mode === 1) {
-            val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
-          } else if (mode === 2) {
-            val = Math.floor(Math.max(0, Math.min(255, lum)) / 36) * 36;
-          } else if (mode === 4) {
-            val = lum > 128 ? 255 : 0;
+            r = r > 128 ? 255 : (r > 64 ? 128 : 0);
+            g = g > 128 ? 255 : (g > 64 ? 128 : 0);
+            b = b > 128 ? 255 : (b > 64 ? 128 : 0);
+          } else {
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            lum = (lum - 128) * contrast + 128 + totalNoise;
+            let val = 0;
+            if (mode === 0) {
+              const threshold = bayer[rowOffset + (x & 3)];
+              val = lum > threshold ? 255 : 0;
+            } else if (mode === 1) {
+              val = Math.floor(Math.max(0, Math.min(255, lum)) / 85) * 85;
+            } else if (mode === 2) {
+              val = Math.floor(Math.max(0, Math.min(255, lum)) / 36) * 36;
+            } else if (mode === 4) {
+              val = lum > 128 ? 255 : 0;
+            }
+            r = g = b = val;
           }
-          r = g = b = val;
         }
 
-        // === ПОСТ-ЭФФЕКТЫ ===
-        if (mode === 5) {
-          // CRT
+        // === РЕЖИМ 5: CRT ===
+        else if (mode === 5) {
+          r = (r - 128) * contrast + 128 + totalNoise;
+          g = (g - 128) * contrast + 128 + totalNoise;
+          b = (b - 128) * contrast + 128 + totalNoise;
+
           if (y % 3 === 0) {
             r *= 0.5; g *= 0.5; b *= 0.5;
           }
+
           const flicker = 0.92 + Math.random() * 0.16;
           r *= flicker; g *= flicker; b *= flicker;
-          if (r > 180 && g > 180 && b > 180) {
-            r = Math.min(255, r * 1.1);
-            g = Math.min(255, g * 1.1);
-            b = Math.min(255, b * 1.1);
+
+          if (r > 200 && g > 200 && b > 200) {
+            r = Math.min(255, r * 1.05);
+            g = Math.min(255, g * 1.05);
+            b = Math.min(255, b * 1.05);
           }
-        } else if (mode === 6) {
-          // RECEIPT (чек)
-          const lum2 = 0.299 * r + 0.587 * g + 0.114 * b;
-          const noise = (Math.random() - 0.5) * 60;
-          const paperVal = lum2 + noise > 128 ? 255 : 0;
-          
+
+          r *= 0.85;
+          b *= 0.85;
+        }
+
+        // === РЕЖИМ 6: RECEIPT (чек) ===
+        else if (mode === 6) {
+          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          lum = (lum - 128) * contrast + 128;
+          const noise = (Math.random() - 0.5) * 80;
+          const paperVal = lum + noise > 128 ? 255 : 0;
+
           if (paperVal > 128) {
-            r = 250; g = 248; b = 230; // Желтоватая бумага
+            r = 255; g = 250; b = 220;
           } else {
-            r = 30; g = 30; b = 30; // Тёмный текст
+            r = 30; g = 30; b = 30;
           }
-          
-          if (Math.random() < 0.015) {
-            r = 250; g = 248; b = 230; // Пропуск строки
+
+          if (Math.random() < 0.01) {
+            r = 255; g = 250; b = 220;
           }
-          if (Math.random() < 0.003) {
-            r *= 0.6; g *= 0.6; b *= 0.6; // Артефакт
+          if (Math.random() < 0.002) {
+            r *= 0.7; g *= 0.7; b *= 0.7;
           }
         }
-        // ====================
 
         if (invert) {
           r = 255 - r;
           g = 255 - g;
           b = 255 - b;
         }
+
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+
         data[i] = r;
         data[i + 1] = g;
         data[i + 2] = b;
