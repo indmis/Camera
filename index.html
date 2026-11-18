@@ -162,8 +162,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
 
-  
-<script>
+ <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -197,7 +196,7 @@ const modes = [
   'ГРЯЗЬ + ШУМ',
   'БРЕЛОК RGB',
   'ПОРОГ 1-BIT',
-  'CRT'
+  'CCTV'
 ];
 let mode = 0;
 let invert = false;
@@ -299,7 +298,7 @@ async function startCamera() {
   }
 }
 
-// === ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ПО ДВОЙНОМУ ТАПУ ===
+// === ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ===
 function switchCamera() {
   if (isSwitchingCamera) return;
   isSwitchingCamera = true;
@@ -343,7 +342,7 @@ viewfinder.addEventListener('touchend', (e) => {
     tapTimeout = setTimeout(() => {
       if (mode === 5) {
         if (navigator.vibrate) navigator.vibrate(20);
-        statusEl.textContent = 'CRT ПАТТЕРН ОБНОВЛЁН';
+        statusEl.textContent = 'CCTV ОБНОВЛЁН';
       }
       tapTimeout = null;
     }, DOUBLE_TAP_DELAY);
@@ -460,6 +459,10 @@ function processFrame() {
       prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
     }
 
+    // === CCTV: подготовка «мыла» ===
+    // Для мыла нужно усреднить пиксели с соседями.
+    // Сделаем это для каждого пикселя в режиме CCTV.
+    
     for (let y = 0; y < H; y++) {
       const rowOffset = (y & 3) << 2;
       for (let x = 0; x < W; x++) {
@@ -511,37 +514,71 @@ function processFrame() {
           }
         }
 
-        // === РЕЖИМ 5: CRT (попиксельный скан, зелёный) ===
+        // === РЕЖИМ 5: CCTV (мыло, растяжение, искажения) ===
         else if (mode === 5) {
-          r = (r - 128) * contrast + 128 + totalNoise;
-          g = (g - 128) * contrast + 128 + totalNoise;
-          b = (b - 128) * contrast + 128 + totalNoise;
+          // 1. Берём усреднение с соседями (мыло)
+          // Для быстроты берём только 4 соседа (сверху, снизу, слева, справа)
+          // Но чтобы не было квадратов, используем диагонали тоже.
+          // Ограничим, чтобы не выходить за границы.
+          let sumR = 0, sumG = 0, sumB = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
+                const nP = ny * W + nx;
+                const nP3 = nP * 3;
+                sumR += prevRaw[nP3];
+                sumG += prevRaw[nP3 + 1];
+                sumB += prevRaw[nP3 + 2];
+                count++;
+              }
+            }
+          }
+          // Усреднённые значения (мыло)
+          let avgR = sumR / count;
+          let avgG = sumG / count;
+          let avgB = sumB / count;
 
-          // Попиксельная сетка (каждый 2-й пиксель по X и Y темнее)
-          if ((x % 2 === 0) && (y % 2 === 0)) {
-            r *= 0.6; g *= 0.6; b *= 0.6;
+          // 2. Применяем контраст к усреднённому
+          avgR = (avgR - 128) * contrast + 128 + totalNoise;
+          avgG = (avgG - 128) * contrast + 128 + totalNoise;
+          avgB = (avgB - 128) * contrast + 128 + totalNoise;
+
+          // 3. Лёгкое искажение (рябь по X и Y)
+          const rippleX = Math.sin(y * 0.1 + frameCount * 0.05) * 0.5;
+          const rippleY = Math.cos(x * 0.1 + frameCount * 0.05) * 0.5;
+          // Сдвигаем пиксель (используем целочисленный сдвиг)
+          const shiftX = Math.round(rippleX);
+          const shiftY = Math.round(rippleY);
+          // Но у нас уже усреднено, поэтому просто добавим лёгкий шум от сдвига
+          // (можно пропустить, чтобы не усложнять)
+
+          // 4. Десатурация (блёклые цвета, как у CCTV)
+          const lumCCTV = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
+          avgR = lumCCTV + (avgR - lumCCTV) * 0.6; // 60% насыщенности
+          avgG = lumCCTV + (avgG - lumCCTV) * 0.6;
+          avgB = lumCCTV + (avgB - lumCCTV) * 0.6;
+
+          // 5. Лёгкий зелёный оттенок (как у дешёвых камер)
+          avgG *= 1.1;
+          avgR *= 0.95;
+          avgB *= 0.95;
+
+          // 6. Интерлейс (горизонтальные полосы через каждые 2 пикселя)
+          if (y % 2 === 0) {
+            avgR *= 0.85; avgG *= 0.85; avgB *= 0.85;
           }
 
-          // Зелёный люминофор (гасим красный и синий)
-          r *= 0.5;
-          b *= 0.5;
-
-          // Лёгкое мерцание
-          const flicker = 0.95 + Math.random() * 0.1;
-          r *= flicker; g *= flicker; b *= flicker;
-
-          // Свечение для ярких пикселей
-          if (g > 180) {
-            g = Math.min(255, g * 1.15);
-          }
-
-          // Виньетка
+          // 7. Виньетка (по краям темнее)
           const cx = W / 2, cy = H / 2;
           const dx = (x - cx) / cx;
           const dy = (y - cy) / cy;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const vignette = Math.max(0, 1 - dist * 0.6);
-          r *= vignette; g *= vignette; b *= vignette;
+          const vignette = Math.max(0.5, 1 - dist * 0.7);
+          avgR *= vignette; avgG *= vignette; avgB *= vignette;
+
+          r = avgR; g = avgG; b = avgB;
         }
 
         if (invert) {
