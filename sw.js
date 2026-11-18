@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dither-camf2-gif-v666';
+const CACHE_NAME = 'camfCRTv676';
 const ASSETS = [
   './',
   './index.html',
