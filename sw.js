@@ -1,4 +1,4 @@
-const CACHE_NAME = 'camfCRTv676';
+const CACHE_NAME = 'camCRTPAPv676';
 const ASSETS = [
   './',
   './index.html',
