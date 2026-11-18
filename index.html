@@ -161,7 +161,6 @@
 <!-- ВСТРОЕННАЯ БИБЛИОТЕКА GIF.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
-
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -221,6 +220,51 @@ let starOffsetX = 0;
 let starOffsetY = 0;
 const STAR_PARALLAX = 6;
 
+// === РАНДОМНЫЙ ПАТТЕРН СКАН-ЛИНИЙ ДЛЯ CRT ===
+let crtScanPattern = [];
+let crtScanFrame = 0;
+const CRT_SCAN_SPEED = 120;
+
+function generateCrtPattern() {
+  crtScanPattern = new Float32Array(H);
+  for (let y = 0; y < H; y++) {
+    crtScanPattern[y] = 1.0;
+  }
+  
+  let y = Math.floor(Math.random() * 20);
+  while (y < H) {
+    const len = 1 + Math.floor(Math.random() * 3);
+    const depth = 0.6 + Math.random() * 0.25;
+    
+    for (let i = 0; i < len && y + i < H; i++) {
+      const centerDist = Math.abs(i - (len - 1) / 2) / ((len - 1) / 2 + 0.5);
+      const val = 1.0 - (1.0 - depth) * (1.0 - centerDist * 0.5);
+      crtScanPattern[y + i] = Math.min(crtScanPattern[y + i], val);
+    }
+    
+    y += len;
+    y += 10 + Math.floor(Math.random() * 10);
+  }
+}
+
+// === РОВНАЯ РАМКА ДЛЯ ЧЕКА ===
+let receiptFrame = null;
+
+function generateReceiptFrame() {
+  receiptFrame = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) receiptFrame[i] = 1;
+
+  const border = 6 + Math.floor(Math.random() * 5);
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (x < border || x >= W - border || y < border || y >= H - border) {
+        receiptFrame[y * W + x] = 0;
+      }
+    }
+  }
+}
+
 const bayer = new Uint8Array(16);
 const bayerSrc = "0,128,32,160,192,64,224,96,48,176,16,144,240,112,208,80".split(",");
 for (let i = 0; i < 16; i++) bayer[i] = parseInt(bayerSrc[i], 10);
@@ -244,6 +288,8 @@ function initSensorBuffers() {
 
   starOffsetX = 0;
   starOffsetY = 0;
+  generateCrtPattern();
+  generateReceiptFrame();
 }
 
 initSensorBuffers();
@@ -299,7 +345,7 @@ async function startCamera() {
   }
 }
 
-// === ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ПО ДВОЙНОМУ ТАПУ ===
+// === ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ПО ДВОЙНОМУ ТАПУ + ОДИНОЧНЫЙ ТАП ДЛЯ ПАТТЕРНА ===
 function switchCamera() {
   if (isSwitchingCamera) return;
   isSwitchingCamera = true;
@@ -312,6 +358,9 @@ function switchCamera() {
   facingMode = (facingMode === 'environment') ? 'user' : 'environment';
   statusEl.textContent = facingMode === 'user' ? 'ФРОНТАЛКА' : 'ЗАДНЯЯ';
 
+  generateCrtPattern();
+  generateReceiptFrame();
+
   startCamera().finally(() => {
     setTimeout(() => { isSwitchingCamera = false; }, 300);
   });
@@ -323,15 +372,35 @@ viewfinder.addEventListener('dblclick', (e) => {
 });
 
 let lastTap = 0;
+let tapTimeout = null;
+
 viewfinder.addEventListener('touchend', (e) => {
   const now = Date.now();
   const DOUBLE_TAP_DELAY = 300;
+  
   if (now - lastTap < DOUBLE_TAP_DELAY) {
+    if (tapTimeout) {
+      clearTimeout(tapTimeout);
+      tapTimeout = null;
+    }
     e.preventDefault();
     switchCamera();
     lastTap = 0;
   } else {
     lastTap = now;
+    if (tapTimeout) clearTimeout(tapTimeout);
+    tapTimeout = setTimeout(() => {
+      if (mode === 5) {
+        generateCrtPattern();
+        if (navigator.vibrate) navigator.vibrate(20);
+        statusEl.textContent = 'CRT ПАТТЕРН ОБНОВЛЁН';
+      } else if (mode === 6) {
+        generateReceiptFrame();
+        if (navigator.vibrate) navigator.vibrate(20);
+        statusEl.textContent = 'ЧЕК РАМКА ОБНОВЛЕНА';
+      }
+      tapTimeout = null;
+    }, DOUBLE_TAP_DELAY);
   }
 }, { passive: false });
 
@@ -355,6 +424,11 @@ contrastSlider.addEventListener('input', () => {
 modeBtn.addEventListener('click', () => {
   mode = (mode + 1) % modes.length;
   modeBtn.textContent = modes[mode];
+  if (mode === 5) {
+    generateCrtPattern();
+  } else if (mode === 6) {
+    generateReceiptFrame();
+  }
 });
 
 resBtn.addEventListener('click', () => {
@@ -374,11 +448,11 @@ invBtn.addEventListener('click', () => {
 
 let frameCount = 0;
 let isRecordingGif = false;
-let crtScanlineOffset = 0;
 
 function processFrame() {
   if (video.readyState >= 2 && video.videoWidth > 0) {
     frameCount++;
+    crtScanFrame++;
 
     const vRatio = video.videoWidth / video.videoHeight;
     const cRatio = W / H;
@@ -446,11 +520,13 @@ function processFrame() {
       prevRaw[p3 + 2] = prevRaw[p3 + 2] * effectiveTrail + data[i + 2] * keepNew;
     }
 
-    // Для CRT: смещение скан-линий
-    crtScanlineOffset = (crtScanlineOffset + 1) % 6;
+    const scanOffset = Math.floor(crtScanFrame / CRT_SCAN_SPEED);
 
     for (let y = 0; y < H; y++) {
       const rowOffset = (y & 3) << 2;
+      const scanY = (y + scanOffset) % crtScanPattern.length;
+      const scanVal = crtScanPattern[scanY];
+
       for (let x = 0; x < W; x++) {
         const p = y * W + x;
         const i = p * 4;
@@ -500,100 +576,69 @@ function processFrame() {
           }
         }
 
-        // === РЕЖИМ 5: CRT (жёсткий, без бегущей полосы) ===
+        // === РЕЖИМ 5: CRT (мягкие медленные скан-линии) ===
         else if (mode === 5) {
           r = (r - 128) * contrast + 128 + totalNoise;
           g = (g - 128) * contrast + 128 + totalNoise;
           b = (b - 128) * contrast + 128 + totalNoise;
 
-          // Скан-линии: каждый 2-й ряд темнее
-          if ((y + crtScanlineOffset) % 2 === 0) {
-            r *= 0.3; g *= 0.3; b *= 0.3;
-          }
+          r *= scanVal; g *= scanVal; b *= scanVal;
 
-          // Мерцание всего кадра
-          const flicker = 0.85 + Math.random() * 0.25;
+          const flicker = 0.97 + Math.random() * 0.06;
           r *= flicker; g *= flicker; b *= flicker;
 
-          // Свечение (bloom) для ярких пикселей
           if (r > 180 && g > 180 && b > 180) {
-            r = Math.min(255, r * 1.15);
-            g = Math.min(255, g * 1.15);
-            b = Math.min(255, b * 1.15);
+            r = Math.min(255, r * 1.1);
+            g = Math.min(255, g * 1.1);
+            b = Math.min(255, b * 1.1);
           }
 
-          // Зелёный люминофор
-          r *= 0.7;
-          b *= 0.7;
+          r *= 0.85;
+          b *= 0.85;
 
-          // Виньетка
           const cx = W / 2, cy = H / 2;
           const dx = (x - cx) / cx;
           const dy = (y - cy) / cy;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const vignette = Math.max(0, 1 - dist * 0.8);
+          const vignette = Math.max(0, 1 - dist * 0.5);
           r *= vignette; g *= vignette; b *= vignette;
         }
 
-// === РЕЖИМ 6: RECEIPT (чек, термопечать) ===
-else if (mode === 6) {
-  // Исходная яркость
-  let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  
-  // Лёгкий контраст (но не жёсткий)
-  lum = (lum - 128) * (contrast * 0.7) + 128;
-  
-  // Неравномерность прогрева головки: вертикальные полосы
-  const heatWave = Math.sin(x * 0.15) * 8 + Math.sin(x * 0.4) * 4;
-  lum += heatWave;
-  
-  // Шум бумаги (зернистость)
-  const grain = (Math.random() - 0.5) * 25;
-  lum += grain;
-  
-  // Ограничиваем
-  lum = Math.max(0, Math.min(255, lum));
-  
-  // === ГРАДАЦИИ СЕРОГО (термопечать) ===
-  // Вместо бинарного чёрное/белое — несколько уровней
-  // Чем темнее пиксель, тем темнее «краска»
-  // Но бумага сама по себе серая (не белая)
-  
-  // Базовый цвет бумаги (тёплый серо-бежевый)
-  const paperR = 216, paperG = 212, paperB = 200;
-  // Цвет «краски» (тёмно-серый, не чёрный)
-  const inkR = 45, inkG = 42, inkB = 38;
-  
-  // Нормализуем яркость в 0..1 (0 = тёмная краска, 1 = чистая бумага)
-  const t = lum / 255;
-  
-  // Плавное смешивание: чем темнее пиксель, тем больше «краски»
-  // Используем нелинейную кривую для градаций (как у термопечати)
-  const inkAmount = Math.pow(1 - t, 1.5); // 0..1
-  
-  // Смешиваем бумагу и краску
-  r = paperR * (1 - inkAmount) + inkR * inkAmount;
-  g = paperG * (1 - inkAmount) + inkG * inkAmount;
-  b = paperB * (1 - inkAmount) + inkB * inkAmount;
-  
-  // === СЛУЧАЙНЫЕ ПРОПУСКИ СТРОК (как будто принтер пропустил) ===
-  if (Math.random() < 0.008) {
-    r = paperR; g = paperG; b = paperB;
-  }
-  
-  // === ВЕРТИКАЛЬНЫЕ АРТЕФАКТЫ (замятие бумаги) ===
-  if (Math.random() < 0.002) {
-    r *= 0.75; g *= 0.75; b *= 0.75;
-  }
-  
-  // === ЛЁГКАЯ ВИНЬЕТКА (как будто чек сфоткан) ===
-  const cx = W / 2, cy = H / 2;
-  const dx = (x - cx) / cx;
-  const dy = (y - cy) / cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const vignette = Math.max(0.75, 1 - dist * 0.3);
-  r *= vignette; g *= vignette; b *= vignette;
-}
+        // === РЕЖИМ 6: RECEIPT (чек, термопечать) ===
+        else if (mode === 6) {
+          const paperR = 216, paperG = 212, paperB = 200;
+
+          if (receiptFrame && receiptFrame[p] === 0) {
+            r = paperR; g = paperG; b = paperB;
+          } else {
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            lum = (lum - 128) * (contrast * 0.7) + 128;
+            lum = Math.max(0, Math.min(255, lum));
+
+            const inkR = 45, inkG = 42, inkB = 38;
+
+            const t = lum / 255;
+            const inkAmount = Math.pow(1 - t, 1.5);
+
+            r = paperR * (1 - inkAmount) + inkR * inkAmount;
+            g = paperG * (1 - inkAmount) + inkG * inkAmount;
+            b = paperB * (1 - inkAmount) + inkB * inkAmount;
+
+            if (Math.random() < 0.008) {
+              r = paperR; g = paperG; b = paperB;
+            }
+            if (Math.random() < 0.002) {
+              r *= 0.75; g *= 0.75; b *= 0.75;
+            }
+
+            const cx = W / 2, cy = H / 2;
+            const dx = (x - cx) / cx;
+            const dy = (y - cy) / cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const vignette = Math.max(0.75, 1 - dist * 0.3);
+            r *= vignette; g *= vignette; b *= vignette;
+          }
+        }
 
         if (invert) {
           r = 255 - r;
